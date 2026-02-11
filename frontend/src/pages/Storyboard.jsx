@@ -227,8 +227,11 @@ export default function Storyboard({ projectId, onUpdate, onCompileShot }) {
     setPushingNotion(true);
     try {
       var result = await notionApi.push(projectId);
-      toast.success(result.count + ' shots pushed to Notion format');
-    } catch (e) { toast.error('Notion push failed'); }
+      toast.success(result.created + ' created, ' + result.updated + ' updated in Notion' + (result.errors ? ' (' + result.errors + ' errors)' : ''));
+    } catch (e) {
+      var msg = e.response && e.response.data && e.response.data.detail ? e.response.data.detail : 'Notion push failed';
+      toast.error(msg);
+    }
     setPushingNotion(false);
   };
 
