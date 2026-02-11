@@ -488,6 +488,122 @@ async def delete_shot(project_id: str, shot_id: str):
     await db.shots.delete_one({"id": shot_id, "project_id": project_id})
     return {"status": "deleted"}
 
+# ==================== SHOT REORDER ====================
+
+class ShotReorder(BaseModel):
+    shot_ids: List[str]
+
+@api_router.post("/projects/{project_id}/shots/reorder")
+async def reorder_shots(project_id: str, data: ShotReorder):
+    """Reorder shots - shot_ids list defines the new order (index+1 = shot_number)."""
+    for i, sid in enumerate(data.shot_ids):
+        await db.shots.update_one({"id": sid, "project_id": project_id}, {"$set": {"shot_number": i + 1}})
+    return {"status": "reordered", "count": len(data.shot_ids)}
+
+# ==================== BATCH COMPILE ====================
+
+class BatchCompileRequest(BaseModel):
+    shot_ids: List[str]
+
+@api_router.post("/projects/{project_id}/batch-compile")
+async def batch_compile(project_id: str, data: BatchCompileRequest):
+    """Compile multiple shots at once. Returns list of results."""
+    project = await db.projects.find_one({"id": project_id}, {"_id": 0})
+    if not project: raise HTTPException(404, "Project not found")
+
+    all_shots = clean_docs(await db.shots.find({"project_id": project_id}, {"_id": 0}).sort("shot_number", 1).to_list(1000))
+    shot_index = {s["id"]: (i, s) for i, s in enumerate(all_shots)}
+    scenes_map = {}
+    for sc in clean_docs(await db.scenes.find({"project_id": project_id}, {"_id": 0}).to_list(100)):
+        scenes_map[sc["id"]] = sc
+    worlds_map = {}
+    for w in clean_docs(await db.worlds.find({"project_id": project_id}, {"_id": 0}).to_list(100)):
+        worlds_map[w["id"]] = w
+    chars = clean_docs(await db.characters.find({"project_id": project_id}, {"_id": 0}).to_list(100))
+
+    results = []
+    api_key = await get_api_key()
+    if not api_key:
+        raise HTTPException(400, "No API key configured")
+
+    for sid in data.shot_ids:
+        if sid not in shot_index:
+            results.append({"shot_id": sid, "error": "Shot not found"})
+            continue
+
+        idx, shot = shot_index[sid]
+        scene = scenes_map.get(shot.get("scene_id", ""), {})
+        world = worlds_map.get(scene.get("world_id", ""), {})
+        prev_frame = all_shots[idx-1].get("last_frame_url", "") if idx > 0 else ""
+        next_frame = all_shots[idx+1].get("first_frame_url", "") if idx < len(all_shots)-1 else ""
+
+        compile_data = CompileRequest(
+            project_id=project_id,
+            scene_description=shot.get("description", ""),
+            world_id=scene.get("world_id", ""),
+            character_ids=scene.get("character_ids", []),
+            emotional_zone=scene.get("emotional_zone", "contemplative"),
+            framing=shot.get("framing", "medium"),
+            camera_movement=shot.get("camera_movement", "static"),
+            reference_images=shot.get("reference_images", []),
+            prev_shot_last_frame=prev_frame,
+            next_shot_first_frame=next_frame,
+            shot_id=sid,
+        )
+
+        try:
+            result = await compile_scene(project_id, compile_data)
+            results.append({"shot_id": sid, "shot_number": shot["shot_number"], **result})
+        except Exception as e:
+            results.append({"shot_id": sid, "shot_number": shot["shot_number"], "error": str(e)})
+
+    return {"status": "batch_compiled", "results": results, "total": len(results)}
+
+# ==================== NOTION SYNC ====================
+
+@api_router.post("/projects/{project_id}/notion/push")
+async def notion_push_status(project_id: str):
+    """Push all shot statuses to the Notion sync log. Returns data formatted for Notion DB creation."""
+    project = await db.projects.find_one({"id": project_id}, {"_id": 0})
+    if not project: raise HTTPException(404, "Project not found")
+
+    scenes = {s["id"]: s for s in clean_docs(await db.scenes.find({"project_id": project_id}, {"_id": 0}).to_list(100))}
+    shots = clean_docs(await db.shots.find({"project_id": project_id}, {"_id": 0}).sort("shot_number", 1).to_list(1000))
+
+    notion_rows = []
+    for shot in shots:
+        scene = scenes.get(shot.get("scene_id", ""), {})
+        status_map = {"concept": "Not Started", "world_built": "Not Started", "blocked": "Not Started",
+                       "generated": "In Progress", "audio_layered": "In Progress",
+                       "mixed": "Complete", "final": "Complete"}
+        notion_rows.append({
+            "storyforge_id": shot["id"],
+            "shot_number": shot["shot_number"],
+            "name": shot.get("description", "")[:100],
+            "scene": scene.get("title", ""),
+            "status": status_map.get(shot.get("production_status", "concept"), "Not Started"),
+            "production_status": shot.get("production_status", "concept"),
+            "framing": shot.get("framing", ""),
+            "camera": shot.get("camera_movement", ""),
+            "duration": shot.get("duration_target_sec", 0),
+            "zone": scene.get("emotional_zone", ""),
+            "project": project.get("name", ""),
+        })
+
+    await db.notion_sync_log.insert_one({
+        "id": new_id(), "project_id": project_id, "timestamp": utcnow(),
+        "action": "push", "row_count": len(notion_rows)
+    })
+
+    return {"status": "ready_to_push", "rows": notion_rows, "count": len(notion_rows),
+            "notion_db_schema": {
+                "Name": "title", "Shot Number": "number", "Scene": "select",
+                "Status": "status", "Framing": "select", "Camera": "select",
+                "Duration": "number", "Zone": "select", "StoryForge ID": "rich_text",
+                "Project": "select", "Production Status": "select"
+            }}
+
+
 # ==================== FRAME CONTINUITY ====================
 
 @api_router.get("/projects/{project_id}/continuity")
