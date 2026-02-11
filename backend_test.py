@@ -276,6 +276,123 @@ class StoryForgeAPITester:
                 print(f"   📄 Response: {json.dumps(response, indent=2)[:300]}...")
         return success
 
+    def test_shot_reorder(self):
+        """Test shot reorder endpoint"""
+        if not self.project_id:
+            return False
+
+        # Get current shots first
+        success, shots = self.run_test(
+            "Get Shots for Reorder",
+            "GET",
+            f"projects/{self.project_id}/shots",
+            200
+        )
+        
+        if not success or not shots:
+            print("   ⚠️  No shots found for reorder test")
+            return False
+
+        # Get first 3 shot IDs and reverse their order
+        shot_ids = [s['id'] for s in shots[:3]]
+        reversed_ids = shot_ids[::-1]
+        
+        success, response = self.run_test(
+            "Reorder Shots",
+            "POST",
+            f"projects/{self.project_id}/shots/reorder",
+            200,
+            data={"shot_ids": reversed_ids}
+        )
+        
+        if success:
+            print(f"   🔄 Reordered {response.get('count', 0)} shots")
+        return success
+
+    def test_batch_compile(self):
+        """Test batch compile endpoint"""
+        if not self.project_id:
+            return False
+
+        # Get first 2 shot IDs
+        success, shots = self.run_test(
+            "Get Shots for Batch Compile",
+            "GET",
+            f"projects/{self.project_id}/shots",
+            200
+        )
+        
+        if not success or len(shots) < 2:
+            print("   ⚠️  Need at least 2 shots for batch compile test")
+            return False
+
+        shot_ids = [shots[0]['id'], shots[1]['id']]
+        
+        print("   ⚠️  Starting batch compile test (may take 30+ seconds)...")
+        success, response = self.run_test(
+            "Batch Compile",
+            "POST",
+            f"projects/{self.project_id}/batch-compile",
+            200,
+            data={"shot_ids": shot_ids}
+        )
+        
+        if success:
+            results = response.get('results', [])
+            successful = len([r for r in results if not r.get('error')])
+            print(f"   🎬 Batch compiled {successful}/{len(results)} shots successfully")
+        return success
+
+    def test_notion_push(self):
+        """Test notion push endpoint"""
+        if not self.project_id:
+            return False
+
+        success, response = self.run_test(
+            "Notion Push",
+            "POST",
+            f"projects/{self.project_id}/notion/push",
+            200
+        )
+        
+        if success:
+            rows = response.get('rows', [])
+            schema = response.get('notion_db_schema', {})
+            print(f"   📊 Prepared {len(rows)} rows for Notion with {len(schema)} schema fields")
+            # Show sample row data
+            if rows:
+                sample_row = rows[0]
+                print(f"   📄 Sample: Shot #{sample_row.get('shot_number')}, Status: {sample_row.get('status')}")
+        return success
+
+    def test_describe_image(self):
+        """Test AI describe image endpoint"""
+        if not self.project_id:
+            return False
+
+        describe_data = {
+            "image_url": "https://via.placeholder.com/400x300/00ff00/ffffff?text=Test+World",
+            "entity_type": "world",
+            "additional_context": "Testing AI image description"
+        }
+
+        print("   ⚠️  Starting AI image describe test (may take 10-20 seconds)...")
+        success, response = self.run_test(
+            "AI Describe Image",
+            "POST",
+            f"projects/{self.project_id}/describe-image",
+            200,
+            data=describe_data
+        )
+        
+        if success:
+            result = response.get('result', {})
+            if 'name' in result:
+                print(f"   🤖 AI description successful: {result.get('name', 'N/A')}")
+            else:
+                print(f"   ⚠️  AI description returned unexpected format")
+        return success
+
 def main():
     """Main test execution"""
     print("🚀 Starting StoryForge Backend API Testing")
