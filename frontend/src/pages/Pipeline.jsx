@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { shots as shotsApi, scenes as scenesApi } from '@/lib/api';
+import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Camera, Move, ArrowRight } from 'lucide-react';
 
