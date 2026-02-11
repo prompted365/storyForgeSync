@@ -40,10 +40,10 @@ function SortableShotCard({ shot, onSelect, onCompile, isSelected, onToggleSelec
         {selectMode && (
           <Checkbox checked={isSelected} onCheckedChange={() => onToggleSelect(shot.id)} className="rounded-sm mt-1" data-testid={'select-shot-' + shot.id} />
         )}
-        <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing mt-1 text-zinc-700 hover:text-zinc-400">
+        <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing mt-1 text-zinc-700 hover:text-zinc-400" onClick={function(e) { e.stopPropagation(); }}>
           <GripVertical className="w-3.5 h-3.5" />
         </div>
-        <div className="flex-1 cursor-pointer" onClick={() => onSelect(shot.id)}>
+        <div className="flex-1" onClick={function() { onSelect(shot.id); }}>
           {(shot.reference_frame_url || shot.first_frame_url || (shot.reference_images && shot.reference_images.length > 0)) && (
             <div className="flex gap-1 mb-2">
               {[shot.reference_frame_url, shot.first_frame_url].concat(shot.reference_images || []).filter(Boolean).slice(0, 3).map(function(url, i) {
