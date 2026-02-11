@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { worlds as worldsApi, characters as charsApi, objects as objectsApi } from '@/lib/api';
+import { worlds as worldsApi, characters as charsApi, objects as objectsApi, imageDescribe } from '@/lib/api';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Globe, Users, Box, Plus, ExternalLink, Trash2, MapPin, Sparkles, Image } from 'lucide-react';
+import { Globe, Users, Box, Plus, ExternalLink, Trash2, MapPin, Sparkles, Image, Pencil, X, Check, Loader2, Wand2 } from 'lucide-react';
 
 const ZONE_COLORS = {
   intimate: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
@@ -21,41 +21,111 @@ const ZONE_COLORS = {
   liminal: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
 };
 
-function WorldCard({ world, onDelete }) {
+function InlineField({ value, onSave, textarea, placeholder, mono }) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(value || '');
+  useEffect(() => { setVal(value || ''); }, [value]);
+  const save = () => { onSave(val); setEditing(false); toast.success('Updated'); };
+  const cancel = () => { setVal(value || ''); setEditing(false); };
+
+  if (!editing) {
+    return (
+      <div className="group/inline cursor-pointer" onClick={() => setEditing(true)}>
+        <p className={`text-sm text-zinc-400 ${!value ? 'text-zinc-700 italic' : ''} ${mono ? 'font-mono text-[10px] text-zinc-600' : ''}`}>
+          {value || placeholder || 'Click to edit'}
+        </p>
+        <Pencil className="w-2.5 h-2.5 text-zinc-700 inline ml-1 opacity-0 group-hover/inline:opacity-100 transition-opacity" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex gap-1 items-start">
+      {textarea ? (
+        <Textarea value={val} onChange={e => setVal(e.target.value)} className="bg-black/50 border-zinc-800 font-mono text-sm flex-1" rows={2} autoFocus />
+      ) : (
+        <Input value={val} onChange={e => setVal(e.target.value)} className="bg-black/50 border-zinc-800 font-mono text-sm flex-1 h-7" autoFocus
+          onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') cancel(); }} />
+      )}
+      <Button variant="ghost" size="sm" onClick={save} className="h-7 w-7 p-0 text-emerald-400"><Check className="w-3 h-3" /></Button>
+      <Button variant="ghost" size="sm" onClick={cancel} className="h-7 w-7 p-0 text-zinc-600"><X className="w-3 h-3" /></Button>
+    </div>
+  );
+}
+
+function AIDescribeButton({ projectId, entityType, onResult }) {
+  const [open, setOpen] = useState(false);
+  const [url, setUrl] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const describe = async () => {
+    if (!url.trim()) return;
+    setLoading(true);
+    try {
+      const res = await imageDescribe.describe(projectId, { image_url: url, entity_type: entityType });
+      onResult(res.result, url);
+      toast.success('AI description generated');
+      setOpen(false);
+      setUrl('');
+    } catch (e) { toast.error('Description failed — check API key in Settings'); }
+    setLoading(false);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="ghost" size="sm" className="rounded-sm font-mono text-[10px] text-indigo-400/60 hover:text-indigo-400 h-6 px-2" data-testid={`ai-describe-${entityType}-btn`}>
+          <Wand2 className="w-3 h-3 mr-1" /> AI Describe from Image
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="bg-[#0a0a0a] border-zinc-800 max-w-md">
+        <DialogHeader><DialogTitle className="font-heading uppercase text-white text-sm">AI Image Description</DialogTitle></DialogHeader>
+        <p className="text-xs text-zinc-600 mb-3">Paste an image URL and AI will generate a structured {entityType} description.</p>
+        <Input value={url} onChange={e => setUrl(e.target.value)} placeholder="https://..." className="bg-black/50 border-zinc-800 font-mono text-sm" data-testid="ai-describe-url" />
+        {url && <img src={url} alt="preview" className="w-full h-32 object-cover rounded-sm border border-zinc-800 mt-2" onError={e => { e.target.style.display = 'none'; }} />}
+        <Button onClick={describe} disabled={loading || !url.trim()} className="w-full rounded-sm font-heading uppercase bg-indigo-600 hover:bg-indigo-500 mt-2" data-testid="ai-describe-go">
+          {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Wand2 className="w-4 h-4 mr-2" />}
+          {loading ? 'Analyzing...' : 'Describe Image'}
+        </Button>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function WorldCard({ world, projectId, onDelete, onUpdate }) {
+  const saveField = async (field, value) => {
+    var data = { ...world }; data[field] = value; delete data.id; delete data.project_id; delete data.created_at;
+    await worldsApi.update(projectId, world.id, data);
+    onUpdate();
+  };
+
   return (
     <div className="glass-card rounded-sm p-5 trace-border group" data-testid={`world-card-${world.id}`}>
-      {/* Reference Images */}
       {world.reference_images && world.reference_images.length > 0 && (
         <div className="flex gap-1 mb-3 -mt-1">
           {world.reference_images.slice(0, 3).map((url, i) => (
-            <img key={i} src={url} alt="" className="h-16 flex-1 object-cover rounded-sm border border-zinc-800" onError={e => e.target.style.display='none'} />
+            <img key={i} src={url} alt="" className="h-16 flex-1 object-cover rounded-sm border border-zinc-800" onError={e => { e.target.style.display='none'; }} />
           ))}
         </div>
       )}
       <div className="flex items-start justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <Globe className="w-4 h-4 text-cyan-400" />
-          <h3 className="font-heading font-bold text-lg uppercase tracking-tight text-white">{world.name}</h3>
+        <div className="flex items-center gap-2 flex-1">
+          <Globe className="w-4 h-4 text-cyan-400 flex-shrink-0" />
+          <InlineField value={world.name} onSave={v => saveField('name', v)} placeholder="World name" />
         </div>
-        <Button variant="ghost" size="sm" onClick={() => { if(window.confirm(`Delete world "${world.name}"?`)) onDelete(world.id); }}
-          className="opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-red-400 h-7 w-7 p-0" data-testid={`delete-world-${world.id}`}>
+        <Button variant="ghost" size="sm" onClick={() => { if(window.confirm('Delete "' + world.name + '"?')) onDelete(world.id); }}
+          className="opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-red-400 h-7 w-7 p-0 flex-shrink-0" data-testid={`delete-world-${world.id}`}>
           <Trash2 className="w-3.5 h-3.5" />
         </Button>
       </div>
-      <p className="text-sm text-zinc-500 mb-3 line-clamp-3">{world.description}</p>
-      <div className="flex flex-wrap gap-1.5 mb-3">
-        <Badge className={`rounded-sm font-mono text-[9px] ${ZONE_COLORS[world.emotional_zone] || ZONE_COLORS.contemplative}`}>
-          {world.emotional_zone}
-        </Badge>
-        {world.spatial_character && (
-          <Badge variant="secondary" className="rounded-sm font-mono text-[9px] bg-zinc-900 text-zinc-500">
-            <MapPin className="w-2.5 h-2.5 mr-1" />{world.spatial_character}
-          </Badge>
-        )}
+      <InlineField value={world.description} onSave={v => saveField('description', v)} placeholder="Add description..." textarea />
+      <div className="flex flex-wrap gap-1.5 my-3">
+        <Badge className={`rounded-sm font-mono text-[9px] ${ZONE_COLORS[world.emotional_zone] || ZONE_COLORS.contemplative}`}>{world.emotional_zone}</Badge>
+        {world.spatial_character && <Badge variant="secondary" className="rounded-sm font-mono text-[9px] bg-zinc-900 text-zinc-500"><MapPin className="w-2.5 h-2.5 mr-1" />{world.spatial_character}</Badge>}
       </div>
-      {world.lighting_notes && <p className="font-mono text-[10px] text-zinc-600 line-clamp-2"><Sparkles className="w-2.5 h-2.5 inline mr-1" />{world.lighting_notes}</p>}
+      {world.lighting_notes && <p className="font-mono text-[10px] text-zinc-600 line-clamp-2 mb-2"><Sparkles className="w-2.5 h-2.5 inline mr-1" />{world.lighting_notes}</p>}
       {world.marble_url && (
-        <a href={world.marble_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 mt-3 text-xs text-indigo-400 hover:text-indigo-300">
+        <a href={world.marble_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300">
           <ExternalLink className="w-3 h-3" /> Open in Marble
         </a>
       )}
@@ -63,32 +133,38 @@ function WorldCard({ world, onDelete }) {
   );
 }
 
-function CharacterCard({ char, onDelete }) {
+function CharacterCard({ char, projectId, onDelete, onUpdate }) {
+  const saveField = async (field, value) => {
+    var data = { ...char }; data[field] = value; delete data.id; delete data.project_id; delete data.created_at;
+    await charsApi.update(projectId, char.id, data);
+    onUpdate();
+  };
+
   return (
     <div className="glass-card rounded-sm p-5 trace-border group" data-testid={`char-card-${char.id}`}>
       {char.identity_images && char.identity_images.length > 0 && (
         <div className="flex gap-1 mb-3 -mt-1">
           {char.identity_images.slice(0, 3).map((url, i) => (
-            <img key={i} src={url} alt="" className="h-16 flex-1 object-cover rounded-sm border border-zinc-800" onError={e => e.target.style.display='none'} />
+            <img key={i} src={url} alt="" className="h-16 flex-1 object-cover rounded-sm border border-zinc-800" onError={e => { e.target.style.display='none'; }} />
           ))}
         </div>
       )}
       <div className="flex items-start justify-between mb-3">
-        <div>
-          <h3 className="font-heading font-bold text-lg uppercase tracking-tight text-white">{char.name}</h3>
+        <div className="flex-1">
+          <InlineField value={char.name} onSave={v => saveField('name', v)} placeholder="Character name" />
           <p className="font-mono text-[10px] uppercase tracking-widest text-violet-400">{char.role}</p>
         </div>
-        <Button variant="ghost" size="sm" onClick={() => { if(window.confirm(`Delete character "${char.name}"?`)) onDelete(char.id); }}
-          className="opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-red-400 h-7 w-7 p-0" data-testid={`delete-char-${char.id}`}>
+        <Button variant="ghost" size="sm" onClick={() => { if(window.confirm('Delete "' + char.name + '"?')) onDelete(char.id); }}
+          className="opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-red-400 h-7 w-7 p-0 flex-shrink-0" data-testid={`delete-char-${char.id}`}>
           <Trash2 className="w-3.5 h-3.5" />
         </Button>
       </div>
-      <p className="text-sm text-zinc-500 mb-3 line-clamp-3">{char.description}</p>
-      {char.personality && <p className="text-xs text-zinc-600 mb-2"><span className="text-zinc-400 font-medium">Personality:</span> {char.personality}</p>}
-      {char.visual_notes && <p className="text-xs text-zinc-600 mb-2"><span className="text-zinc-400 font-medium">Visual:</span> {char.visual_notes}</p>}
+      <InlineField value={char.description} onSave={v => saveField('description', v)} placeholder="Add description..." textarea />
+      {char.personality && <div className="mt-2"><InlineField value={char.personality} onSave={v => saveField('personality', v)} placeholder="Personality" mono /></div>}
+      {char.visual_notes && <div className="mt-1"><InlineField value={char.visual_notes} onSave={v => saveField('visual_notes', v)} placeholder="Visual notes" mono /></div>}
       {char.arc_summary && (
         <div className="mt-3 pt-3 border-t border-zinc-800">
-          <p className="font-mono text-[10px] text-zinc-600"><span className="text-zinc-500 uppercase">Arc:</span> {char.arc_summary}</p>
+          <InlineField value={char.arc_summary} onSave={v => saveField('arc_summary', v)} placeholder="Character arc" mono />
         </div>
       )}
     </div>
@@ -102,9 +178,19 @@ function AddWorldDialog({ projectId, onCreated }) {
   const handleSubmit = async () => {
     if (!form.name) return;
     await worldsApi.create(projectId, form);
+    toast.success('World "' + form.name + '" created');
     setOpen(false);
     setForm({ name: '', description: '', emotional_zone: 'contemplative', spatial_character: '', lighting_notes: '', marble_url: '', atmosphere: '' });
     onCreated();
+  };
+
+  const handleAIResult = (result, imageUrl) => {
+    setForm(prev => ({
+      ...prev, name: result.name || prev.name, description: result.description || prev.description,
+      emotional_zone: result.emotional_zone || prev.emotional_zone, lighting_notes: result.lighting_notes || prev.lighting_notes,
+      spatial_character: result.spatial_character || prev.spatial_character, atmosphere: result.atmosphere || prev.atmosphere,
+      reference_images: [imageUrl],
+    }));
   };
 
   return (
@@ -115,7 +201,10 @@ function AddWorldDialog({ projectId, onCreated }) {
         </Button>
       </DialogTrigger>
       <DialogContent className="bg-[#0a0a0a] border-zinc-800 max-w-lg">
-        <DialogHeader><DialogTitle className="font-heading uppercase text-white">New World</DialogTitle></DialogHeader>
+        <DialogHeader>
+          <DialogTitle className="font-heading uppercase text-white">New World</DialogTitle>
+        </DialogHeader>
+        <AIDescribeButton projectId={projectId} entityType="world" onResult={handleAIResult} />
         <div className="space-y-3">
           <Input placeholder="World Name" value={form.name} onChange={e => setForm({...form, name: e.target.value})} className="bg-black/50 border-zinc-800 font-mono text-sm" data-testid="world-name-input" />
           <Textarea placeholder="Description" value={form.description} onChange={e => setForm({...form, description: e.target.value})} className="bg-black/50 border-zinc-800 font-mono text-sm" rows={3} data-testid="world-desc-input" />
@@ -139,9 +228,19 @@ function AddCharacterDialog({ projectId, onCreated }) {
   const handleSubmit = async () => {
     if (!form.name) return;
     await charsApi.create(projectId, form);
+    toast.success('Character "' + form.name + '" created');
     setOpen(false);
     setForm({ name: '', role: '', description: '', personality: '', visual_notes: '', voice_profile: '', arc_summary: '' });
     onCreated();
+  };
+
+  const handleAIResult = (result, imageUrl) => {
+    setForm(prev => ({
+      ...prev, name: result.name || prev.name, description: result.description || prev.description,
+      personality: result.personality || prev.personality, visual_notes: result.visual_notes || prev.visual_notes,
+      voice_profile: result.voice_profile || prev.voice_profile, role: result.role || prev.role,
+      identity_images: [imageUrl],
+    }));
   };
 
   return (
@@ -153,6 +252,7 @@ function AddCharacterDialog({ projectId, onCreated }) {
       </DialogTrigger>
       <DialogContent className="bg-[#0a0a0a] border-zinc-800 max-w-lg">
         <DialogHeader><DialogTitle className="font-heading uppercase text-white">New Character</DialogTitle></DialogHeader>
+        <AIDescribeButton projectId={projectId} entityType="character" onResult={handleAIResult} />
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <Input placeholder="Name" value={form.name} onChange={e => setForm({...form, name: e.target.value})} className="bg-black/50 border-zinc-800 font-mono text-sm" data-testid="char-name-input" />
@@ -176,14 +276,8 @@ export default function WorldBible({ projectId, onUpdate }) {
   const [subTab, setSubTab] = useState('worlds');
 
   const load = useCallback(async () => {
-    const [w, c, o] = await Promise.all([
-      worldsApi.list(projectId),
-      charsApi.list(projectId),
-      objectsApi.list(projectId),
-    ]);
-    setWorldList(w);
-    setCharList(c);
-    setObjList(o);
+    const [w, c, o] = await Promise.all([worldsApi.list(projectId), charsApi.list(projectId), objectsApi.list(projectId)]);
+    setWorldList(w); setCharList(c); setObjList(o);
   }, [projectId]);
 
   useEffect(() => { load(); }, [load]);
@@ -214,14 +308,14 @@ export default function WorldBible({ projectId, onUpdate }) {
 
         <TabsContent value="worlds" className="mt-0">
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {worldList.map(w => <WorldCard key={w.id} world={w} onDelete={handleDeleteWorld} />)}
+            {worldList.map(w => <WorldCard key={w.id} world={w} projectId={projectId} onDelete={handleDeleteWorld} onUpdate={() => { load(); onUpdate(); }} />)}
           </div>
           {worldList.length === 0 && <EmptyState icon={Globe} label="No worlds yet" />}
         </TabsContent>
 
         <TabsContent value="characters" className="mt-0">
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {charList.map(c => <CharacterCard key={c.id} char={c} onDelete={handleDeleteChar} />)}
+            {charList.map(c => <CharacterCard key={c.id} char={c} projectId={projectId} onDelete={handleDeleteChar} onUpdate={() => { load(); onUpdate(); }} />)}
           </div>
           {charList.length === 0 && <EmptyState icon={Users} label="No characters yet" />}
         </TabsContent>
