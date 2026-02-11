@@ -39,9 +39,10 @@ export default function Dashboard() {
     try {
       const result = await seed.mito();
       if (result.project_id) {
+        toast.success('Mito project seeded successfully');
         await load();
       }
-    } catch (e) { console.error(e); }
+    } catch (e) { toast.error('Failed to seed project'); }
   };
 
   if (loading) return (
