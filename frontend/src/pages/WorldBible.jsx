@@ -24,12 +24,21 @@ const ZONE_COLORS = {
 function WorldCard({ world, onDelete }) {
   return (
     <div className="glass-card rounded-sm p-5 trace-border group" data-testid={`world-card-${world.id}`}>
+      {/* Reference Images */}
+      {world.reference_images && world.reference_images.length > 0 && (
+        <div className="flex gap-1 mb-3 -mt-1">
+          {world.reference_images.slice(0, 3).map((url, i) => (
+            <img key={i} src={url} alt="" className="h-16 flex-1 object-cover rounded-sm border border-zinc-800" onError={e => e.target.style.display='none'} />
+          ))}
+        </div>
+      )}
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-2">
           <Globe className="w-4 h-4 text-cyan-400" />
           <h3 className="font-heading font-bold text-lg uppercase tracking-tight text-white">{world.name}</h3>
         </div>
-        <Button variant="ghost" size="sm" onClick={() => onDelete(world.id)} className="opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-red-400 h-7 w-7 p-0" data-testid={`delete-world-${world.id}`}>
+        <Button variant="ghost" size="sm" onClick={() => { if(window.confirm(`Delete world "${world.name}"?`)) onDelete(world.id); }}
+          className="opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-red-400 h-7 w-7 p-0" data-testid={`delete-world-${world.id}`}>
           <Trash2 className="w-3.5 h-3.5" />
         </Button>
       </div>
