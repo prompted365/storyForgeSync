@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import { worlds as worldsApi, characters as charsApi, objects as objectsApi } from '@/lib/api';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Globe, Users, Box, Plus, ExternalLink, Trash2, MapPin, Sparkles } from 'lucide-react';
+import { Globe, Users, Box, Plus, ExternalLink, Trash2, MapPin, Sparkles, Image } from 'lucide-react';
 
 const ZONE_COLORS = {
   intimate: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
