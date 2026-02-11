@@ -52,12 +52,18 @@ export const shots = {
   update: (pid, id, data) => api.put(`/projects/${pid}/shots/${id}`, data).then(r => r.data),
   updateStatus: (pid, id, status) => api.patch(`/projects/${pid}/shots/${id}/status?status=${status}`).then(r => r.data),
   batchStatus: (pid, data) => api.post(`/projects/${pid}/shots/batch-status`, data).then(r => r.data),
+  reorder: (pid, shotIds) => api.post(`/projects/${pid}/shots/reorder`, { shot_ids: shotIds }).then(r => r.data),
   delete: (pid, id) => api.delete(`/projects/${pid}/shots/${id}`).then(r => r.data),
 };
 
 export const compiler = {
   compile: (pid, data) => api.post(`/projects/${pid}/compile`, data).then(r => r.data),
+  batchCompile: (pid, shotIds) => api.post(`/projects/${pid}/batch-compile`, { shot_ids: shotIds }).then(r => r.data),
   history: (pid, shotId) => api.get(`/projects/${pid}/compilations`, { params: shotId ? { shot_id: shotId } : {} }).then(r => r.data),
+};
+
+export const notion = {
+  push: (pid) => api.post(`/projects/${pid}/notion/push`).then(r => r.data),
 };
 
 export const imageDescribe = {
