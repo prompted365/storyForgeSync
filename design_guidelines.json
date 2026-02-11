@@ -1,0 +1,153 @@
+{
+  "identity": {
+    "name": "StoryForge",
+    "description": "Universal AI Filmmaking Production Engine",
+    "persona": "E1 - The Anti-AI Designer",
+    "aesthetic": "Mission Control / Cinematic / Dark Future",
+    "emotional_tone": "Precision, Creative Power, Immersion",
+    "theme_mode": "dark"
+  },
+  "typography": {
+    "font_family": {
+      "heading": "Barlow Condensed, sans-serif",
+      "body": "Manrope, sans-serif",
+      "mono": "JetBrains Mono, monospace"
+    },
+    "google_fonts_url": "https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;800&family=JetBrains+Mono:wght@400;500&family=Manrope:wght@300;400;600;700&display=swap",
+    "usage": {
+      "h1": "font-heading font-extrabold text-5xl tracking-tighter uppercase",
+      "h2": "font-heading font-bold text-3xl tracking-tight uppercase",
+      "h3": "font-heading font-semibold text-2xl tracking-normal",
+      "body": "font-body text-base leading-relaxed text-muted-foreground",
+      "label": "font-mono text-xs uppercase tracking-widest text-muted-foreground",
+      "code": "font-mono text-sm bg-black/50 p-1 rounded-sm"
+    }
+  },
+  "colors": {
+    "palette": {
+      "background": "#050505",
+      "foreground": "#fafafa",
+      "card": "#0a0a0a",
+      "card_foreground": "#ffffff",
+      "popover": "#0a0a0a",
+      "popover_foreground": "#ffffff",
+      "primary": "#6366f1",
+      "primary_foreground": "#ffffff",
+      "secondary": "#27272a",
+      "secondary_foreground": "#fafafa",
+      "muted": "#18181b",
+      "muted_foreground": "#a1a1aa",
+      "accent": "#ef4444",
+      "accent_foreground": "#ffffff",
+      "destructive": "#7f1d1d",
+      "destructive_foreground": "#fef2f2",
+      "border": "#27272a",
+      "input": "#27272a",
+      "ring": "#6366f1"
+    },
+    "brand_accents": {
+      "ai_magic": "#8b5cf6",
+      "recording": "#ef4444",
+      "success": "#10b981",
+      "warning": "#f59e0b"
+    }
+  },
+  "visual_enhancers": {
+    "borders": "1px solid rgba(255,255,255,0.08)",
+    "glassmorphism": "bg-black/40 backdrop-blur-xl border-white/10",
+    "shadows": {
+      "card": "0 0 0 1px rgba(255,255,255,0.05), 0 4px 20px -2px rgba(0,0,0,0.5)",
+      "glow": "0 0 20px -5px var(--primary)"
+    },
+    "radius": "rounded-sm",
+    "textures": "Use subtle noise overlay on the main background for 'film grain' feel"
+  },
+  "component_styling": {
+    "buttons": "rounded-sm font-heading uppercase tracking-wider font-bold hover:shadow-[0_0_15px_rgba(99,102,241,0.5)] transition-all duration-300",
+    "cards": "bg-card border-border/40 hover:border-primary/50 transition-colors duration-300 rounded-sm no-shadow hover:shadow-2xl",
+    "inputs": "bg-black/50 border-border/50 focus:border-primary focus:ring-1 focus:ring-primary rounded-sm font-mono",
+    "badges": "rounded-sm font-mono text-[10px] uppercase tracking-wider"
+  },
+  "layout_strategies": {
+    "dashboard_grid": "grid grid-cols-1 md:grid-cols-12 gap-6 p-8",
+    "bento_grid_rules": {
+      "hero": "col-span-full md:col-span-8 row-span-2",
+      "sidebar": "col-span-full md:col-span-4 row-span-2",
+      "stat_card": "col-span-1 md:col-span-4"
+    },
+    "spacing": "Generous padding (p-8, p-12) to create cinematic breathing room"
+  },
+  "image_urls": {
+    "characters": [
+      {
+        "url": "https://images.unsplash.com/photo-1580046939256-c377c5b099f1?crop=entropy&cs=srgb&fm=jpg&q=85",
+        "desc": "Cyberpunk Woman Mask",
+        "category": "Character"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1750096319146-6310519b5af2?crop=entropy&cs=srgb&fm=jpg&q=85",
+        "desc": "Digital Face Glowing",
+        "category": "Character"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1656229181541-a42184b5625c?crop=entropy&cs=srgb&fm=jpg&q=85",
+        "desc": "VR Headset Woman",
+        "category": "Character"
+      }
+    ],
+    "worlds": [
+      {
+        "url": "https://images.unsplash.com/photo-1663726038532-09643f658e80?crop=entropy&cs=srgb&fm=jpg&q=85",
+        "desc": "Sci-Fi Water Landscape",
+        "category": "World"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1763198217110-07b5350aa179?crop=entropy&cs=srgb&fm=jpg&q=85",
+        "desc": "Surreal Rocky Landscape",
+        "category": "World"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1758427971321-04ea69d1e8eb?crop=entropy&cs=srgb&fm=jpg&q=85",
+        "desc": "Snow Peak Mountain",
+        "category": "World"
+      }
+    ],
+    "props": [
+      {
+        "url": "https://images.unsplash.com/photo-1595948216072-8f1c632c25e7?crop=entropy&cs=srgb&fm=jpg&q=85",
+        "desc": "Dragon Figurine",
+        "category": "Prop"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1632179011261-a5bc4fe2661b?crop=entropy&cs=srgb&fm=jpg&q=85",
+        "desc": "Gold Mask",
+        "category": "Prop"
+      }
+    ]
+  },
+  "motion": {
+    "hover": "transform: translateY(-2px)",
+    "transition": "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+    "animation_classes": {
+      "fade_in": "animate-in fade-in duration-500",
+      "slide_up": "animate-in slide-in-from-bottom-4 duration-500",
+      "pulse_slow": "animate-pulse duration-[3000ms]"
+    }
+  },
+  "instructions_to_main_agent": [
+    "FORCE DARK MODE: Ensure the 'dark' class is always applied to the html/body.",
+    "NO ROUNDED CORNERS: Override shadcn default radius to 'rounded-sm' or 'rounded-none' for a sharp, technical look.",
+    "GRID LAYOUTS: Use the Bento Grid strategy for the dashboard. Avoid equal-width columns.",
+    "TYPOGRAPHY: Import the Google Fonts in the index.css or index.html immediately. Use 'Barlow Condensed' for all headers.",
+    "TRANSPARENCY: Do not use pure transparent backgrounds for dropdowns/overlays. Use 'bg-black/90' with backdrop-blur.",
+    "ICONS: Use Lucide-React icons. Do NOT use emojis.",
+    "TESTING: Add 'data-testid' to all interactive elements."
+  ],
+  "universal_guidelines": [
+    "Use 2-3x more spacing than feels comfortable.",
+    "Every interaction needs micro-animations.",
+    "Do not make generic centered layouts.",
+    "Use glass-morphism effects with backdrop filters.",
+    "Never use AI assistant Emoji characters."
+  ]
+}
