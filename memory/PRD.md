@@ -1,48 +1,39 @@
 # StoryForge — AI Filmmaking Production Engine
-## PRD v1.2 | Feb 11, 2026
+## PRD v1.3 | Feb 11, 2026
 
-## What's LIVE (v1.2)
-### Backend
-- Full CRUD: Projects, Worlds, Characters, Objects, Scenes, Shots (all with GET/POST/PUT/DELETE)
-- AI Scene Compiler (GPT-5.2) with frame continuity, reference images, brand/world/character context
-- AI Image Description endpoint (URL → structured entity description)
-- Frame Continuity Chain API (returns all shots in order with transition data)
-- Compilation History (stored in DB, queryable per project/shot)
-- Project Export (full JSON)
-- Batch Status Update (multi-shot advancement)
-- Secrets Management API (store/retrieve API keys from DB)
-- Health Check + MongoDB indexes on startup
-- Shot filtering by scene_id and status
-- Mito seed with 5 worlds, 2 characters, 5 scenes, 15 shots with transition types
+## What's LIVE (v1.3)
+### All Previous Features +
+- **Drag-and-drop shot reordering** (dnd-kit) — grab handle on each shot card, reorders within scene
+- **Batch compilation** — Select mode toggle, checkbox on each shot, "Batch Compile (N)" button → compiles all selected shots with full context
+- **Notion sync** — Push to Notion button generates full shot list with schema. Schema: Name, Shot Number, Scene, Status, Framing, Camera, Duration, Zone, StoryForge ID, Project, Production Status
+- **AI Image Description** — "AI Describe from Image" button on Add World and Add Character dialogs. Paste image URL → GPT-5.2 generates structured entity description → auto-fills form
+- **Inline editing** — Click any world name/description or character name/description/personality/visual_notes/arc_summary to edit in-place. Pencil icon on hover, Enter to save, Escape to cancel
 
-### Frontend
-- Dashboard with stats + project cards
-- New Project creation page (brand, style, defaults, target duration)
-- Project View with 5 tabs + Export button
-- World Bible: Worlds/Characters/Props with image thumbnails, add/delete with confirm dialogs
-- Storyboard: Scene grouping, Add Scene dialog, Add Shot dialog, shot cards with image thumbnails
-- Shot Detail Dialog: Full editing (description, duration, framing, camera, status, prompt stack, audio stack, frame continuity, transitions, reference images, notes) + Compile button + Delete with confirmation
-- Compile-from-Shot: Click Compile on any shot → switches to AI Compiler tab with pre-filled context (scene, world, characters, adjacent frame URLs)
-- Pipeline Kanban: 7-stage advancement with toast notifications
-- AI Compiler: World/character/zone/framing/camera selectors, reference images, frame continuity display, compilation history viewer
-- Settings: API Keys & Secrets (EMERGENT_LLM_KEY, NOTION_API_KEY), Project Identity, Tags, Compliance Rails, Visual Style, Model Preferences, Default Settings
-- Toast notifications on all operations (sonner)
-- Delete confirmation dialogs on all destructive operations
-- Dark theme throughout
+### Backend Endpoints Added
+- POST /api/projects/{id}/shots/reorder — reorder shots by ID array
+- POST /api/projects/{id}/batch-compile — compile multiple shots at once
+- POST /api/projects/{id}/notion/push — generate Notion-ready data with schema
+- POST /api/projects/{id}/describe-image — AI image description
 
-### Deployment
-- Dockerfile.backend, Dockerfile.frontend, docker-compose.yml, nginx.conf
-- .env.example files for both services
-- README.md with full setup instructions
+### Notion DB Schema (for user to create)
+| Property | Type | Description |
+|---|---|---|
+| Name | title | Shot description |
+| Shot Number | number | Sequential number |
+| Scene | select | Scene title |
+| Status | status | Not Started / In Progress / Complete |
+| Framing | select | Camera framing |
+| Camera | select | Camera movement |
+| Duration | number | Seconds |
+| Zone | select | Emotional zone |
+| StoryForge ID | rich_text | UUID for sync |
+| Project | select | Project name |
+| Production Status | select | Granular status |
 
 ## What's COMING SOON
-- Notion bi-directional sync (MCP tools available, integration code pending)
-- Drag-and-drop shot/scene reordering
-- Batch compilation (multi-shot in one call)
-- Image upload (currently URL-based)
-- Inline editing on world/character cards
-- Share Production Bible (PDF/web export)
-- AI Image Description from UI (backend ready, frontend button pending)
-- Keyboard shortcuts
+- Notion direct write (currently generates data, user creates DB manually)
+- Object/Prop full CRUD UI (add/edit/delete)
+- Drag-and-drop scene reordering
+- Share Production Bible export
 - Error boundaries
-- Mobile responsive layouts
+- Mobile responsive
