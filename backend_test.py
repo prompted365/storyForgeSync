@@ -412,6 +412,10 @@ def main():
         ("Scenes API", tester.test_scenes_api),
         ("Shots API", tester.test_shots_api),
         ("Shot Status Update", tester.test_shot_status_update),
+        ("Shot Reorder", tester.test_shot_reorder),
+        ("Batch Compile", tester.test_batch_compile),
+        ("Notion Push", tester.test_notion_push),
+        ("AI Describe Image", tester.test_describe_image),
         ("AI Compiler", tester.test_ai_compiler),
     ]
     
