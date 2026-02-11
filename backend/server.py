@@ -561,47 +561,86 @@ async def batch_compile(project_id: str, data: BatchCompileRequest):
 
 # ==================== NOTION SYNC ====================
 
+CAMERA_NOTION_MAP = {"static":"Static","dolly_in":"Dolly in","dolly_out":"Dolly out","orbit":"Orbit","pan_left":"Pan","pan_right":"Pan","crane_up":"Crane","crane_down":"Crane","tracking":"Handheld","tilt_up":"Tilt","tilt_down":"Tilt","handheld":"Handheld"}
+FRAMING_NOTION_MAP = {"extreme_wide":"Extreme wide","wide":"Wide","medium_wide":"Medium","medium":"Medium","medium_close":"Close","close":"Close","extreme_close":"Extreme close"}
+STATUS_NOTION_MAP = {"concept":"Not Started","world_built":"Not Started","blocked":"Not Started","generated":"In Progress","audio_layered":"In Progress","mixed":"Complete","final":"Complete"}
+
+async def get_notion_creds():
+    token_doc = await db.secrets.find_one({"key": "NOTION_API_KEY"}, {"_id": 0})
+    db_doc = await db.secrets.find_one({"key": "NOTION_DB_ID"}, {"_id": 0})
+    token = token_doc["value"] if token_doc else ""
+    db_id = db_doc["value"] if db_doc else ""
+    return token, db_id
+
 @api_router.post("/projects/{project_id}/notion/push")
 async def notion_push_status(project_id: str):
-    """Push all shot statuses to the Notion sync log. Returns data formatted for Notion DB creation."""
+    """Push all shot statuses directly to the Notion database."""
+    import httpx
+
     project = await db.projects.find_one({"id": project_id}, {"_id": 0})
     if not project: raise HTTPException(404, "Project not found")
+
+    notion_token, notion_db_id = await get_notion_creds()
+    if not notion_token or not notion_db_id:
+        raise HTTPException(400, "Notion credentials not set. Go to Settings > Secrets and set NOTION_API_KEY and NOTION_DB_ID.")
 
     scenes = {s["id"]: s for s in clean_docs(await db.scenes.find({"project_id": project_id}, {"_id": 0}).to_list(100))}
     shots = clean_docs(await db.shots.find({"project_id": project_id}, {"_id": 0}).sort("shot_number", 1).to_list(1000))
 
-    notion_rows = []
-    for shot in shots:
-        scene = scenes.get(shot.get("scene_id", ""), {})
-        status_map = {"concept": "Not Started", "world_built": "Not Started", "blocked": "Not Started",
-                       "generated": "In Progress", "audio_layered": "In Progress",
-                       "mixed": "Complete", "final": "Complete"}
-        notion_rows.append({
-            "storyforge_id": shot["id"],
-            "shot_number": shot["shot_number"],
-            "name": shot.get("description", "")[:100],
-            "scene": scene.get("title", ""),
-            "status": status_map.get(shot.get("production_status", "concept"), "Not Started"),
-            "production_status": shot.get("production_status", "concept"),
-            "framing": shot.get("framing", ""),
-            "camera": shot.get("camera_movement", ""),
-            "duration": shot.get("duration_target_sec", 0),
-            "zone": scene.get("emotional_zone", ""),
-            "project": project.get("name", ""),
-        })
+    headers = {"Authorization": f"Bearer {notion_token}", "Notion-Version": "2022-06-28", "Content-Type": "application/json"}
 
-    await db.notion_sync_log.insert_one({
-        "id": new_id(), "project_id": project_id, "timestamp": utcnow(),
-        "action": "push", "row_count": len(notion_rows)
-    })
+    # First, query existing pages to check for updates vs creates
+    existing = {}
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(f"https://api.notion.com/v1/databases/{notion_db_id}/query", headers=headers, json={"page_size": 100})
+        if resp.status_code == 200:
+            for page in resp.json().get("results", []):
+                sf_id_prop = page.get("properties", {}).get("StoryForge ID", {}).get("rich_text", [])
+                if sf_id_prop:
+                    sf_id = sf_id_prop[0].get("text", {}).get("content", "")
+                    if sf_id:
+                        existing[sf_id] = page["id"]
 
-    return {"status": "ready_to_push", "rows": notion_rows, "count": len(notion_rows),
-            "notion_db_schema": {
-                "Name": "title", "Shot Number": "number", "Scene": "select",
-                "Status": "status", "Framing": "select", "Camera": "select",
-                "Duration": "number", "Zone": "select", "StoryForge ID": "rich_text",
-                "Project": "select", "Production Status": "select"
-            }}
+    created = 0
+    updated = 0
+    errors = 0
+
+    async with httpx.AsyncClient() as client:
+        for shot in shots:
+            scene = scenes.get(shot.get("scene_id", ""), {})
+            props = {
+                "Name": {"title": [{"text": {"content": shot.get("description", "")[:100]}}]},
+                "Shot Number": {"number": shot["shot_number"]},
+                "Scene": {"select": {"name": scene.get("title", "Unknown")}},
+                "Status": {"status": {"name": STATUS_NOTION_MAP.get(shot.get("production_status", "concept"), "Not Started")}},
+                "Framing": {"select": {"name": FRAMING_NOTION_MAP.get(shot.get("framing", ""), "Medium")}},
+                "Camera": {"select": {"name": CAMERA_NOTION_MAP.get(shot.get("camera_movement", ""), "Static")}},
+                "Duration": {"number": shot.get("duration_target_sec", 0)},
+                "Zone": {"select": {"name": scene.get("emotional_zone", "contemplative")}},
+                "StoryForge ID": {"rich_text": [{"text": {"content": shot["id"]}}]},
+                "Project": {"select": {"name": project.get("name", "")[:100]}},
+            }
+
+            if shot["id"] in existing:
+                # Update existing page
+                resp = await client.patch(f"https://api.notion.com/v1/pages/{existing[shot['id']]}", headers=headers, json={"properties": props})
+                if resp.status_code == 200:
+                    updated += 1
+                else:
+                    errors += 1
+                    logger.error(f"Notion update failed for shot #{shot['shot_number']}: {resp.text[:200]}")
+            else:
+                # Create new page
+                resp = await client.post("https://api.notion.com/v1/pages", headers=headers, json={"parent": {"database_id": notion_db_id}, "properties": props})
+                if resp.status_code == 200:
+                    created += 1
+                else:
+                    errors += 1
+                    logger.error(f"Notion create failed for shot #{shot['shot_number']}: {resp.text[:200]}")
+
+    await db.notion_sync_log.insert_one({"id": new_id(), "project_id": project_id, "timestamp": utcnow(), "action": "push", "created": created, "updated": updated, "errors": errors})
+
+    return {"status": "pushed", "created": created, "updated": updated, "errors": errors, "total": len(shots)}
 
 
 # ==================== FRAME CONTINUITY ====================
