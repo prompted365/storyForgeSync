@@ -4,9 +4,10 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
+import json
 from pathlib import Path
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Optional, Dict, Any
+from pydantic import BaseModel, Field
+from typing import List, Optional, Dict
 import uuid
 from datetime import datetime, timezone
 from emergentintegrations.llm.chat import LlmChat, UserMessage
@@ -18,7 +19,7 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-app = FastAPI(title="StoryForge API")
+app = FastAPI(title="StoryForge API", description="AI Filmmaking Production Engine", version="1.0.0")
 api_router = APIRouter(prefix="/api")
 
 logger = logging.getLogger(__name__)
@@ -28,15 +29,18 @@ PRODUCTION_STAGES = ["concept", "world_built", "blocked", "generated", "audio_la
 EMOTIONAL_ZONES = ["intimate", "contemplative", "tense", "revelatory", "chaotic", "transcendent", "desolate", "triumphant", "liminal"]
 FRAMINGS = ["extreme_wide", "wide", "medium_wide", "medium", "medium_close", "close", "extreme_close"]
 CAMERA_MOVEMENTS = ["static", "pan_left", "pan_right", "tilt_up", "tilt_down", "dolly_in", "dolly_out", "crane_up", "crane_down", "orbit", "handheld", "tracking"]
+TRANSITION_TYPES = ["cut", "dissolve", "match_cut", "smash_cut", "fade_to_black", "fade_from_black", "wipe", "continuous"]
 
-def utcnow():
-    return datetime.now(timezone.utc).isoformat()
+def utcnow(): return datetime.now(timezone.utc).isoformat()
+def new_id(): return str(uuid.uuid4())
 
-def new_id():
-    return str(uuid.uuid4())
+async def get_api_key():
+    secret = await db.secrets.find_one({"key": "EMERGENT_LLM_KEY"}, {"_id": 0})
+    if secret and secret.get("value"):
+        return secret["value"]
+    return os.environ.get("EMERGENT_LLM_KEY", "")
 
 # --- Pydantic Models ---
-
 class ProjectCreate(BaseModel):
     name: str
     brand_primary: str = ""
@@ -52,6 +56,7 @@ class ProjectCreate(BaseModel):
     default_aspect_ratio: str = "16:9"
     model_preferences: Dict[str, str] = {}
     tags: List[str] = []
+    target_duration_sec: float = 300.0
 
 class WorldCreate(BaseModel):
     name: str
@@ -121,10 +126,16 @@ class ShotCreate(BaseModel):
     production_status: str = "concept"
     reference_frame_url: str = ""
     generated_asset_url: str = ""
+    first_frame_url: str = ""
+    last_frame_url: str = ""
+    transition_in: str = "cut"
+    transition_out: str = "cut"
+    reference_images: List[str] = []
     notes: str = ""
 
 class ShotUpdate(BaseModel):
     shot_number: Optional[int] = None
+    scene_id: Optional[str] = None
     duration_target_sec: Optional[float] = None
     framing: Optional[str] = None
     camera_movement: Optional[str] = None
@@ -141,6 +152,11 @@ class ShotUpdate(BaseModel):
     production_status: Optional[str] = None
     reference_frame_url: Optional[str] = None
     generated_asset_url: Optional[str] = None
+    first_frame_url: Optional[str] = None
+    last_frame_url: Optional[str] = None
+    transition_in: Optional[str] = None
+    transition_out: Optional[str] = None
+    reference_images: Optional[List[str]] = None
     notes: Optional[str] = None
 
 class CompileRequest(BaseModel):
@@ -154,8 +170,24 @@ class CompileRequest(BaseModel):
     time_of_day: str = ""
     weather: str = ""
     additional_context: str = ""
+    reference_images: List[str] = []
+    prev_shot_last_frame: str = ""
+    next_shot_first_frame: str = ""
+    shot_id: Optional[str] = None
 
-# --- Helper: strip _id ---
+class ImageDescribeRequest(BaseModel):
+    image_url: str
+    entity_type: str = "world"
+    additional_context: str = ""
+
+class SecretUpdate(BaseModel):
+    key: str
+    value: str
+
+class BatchStatusUpdate(BaseModel):
+    shot_ids: List[str]
+    status: str
+
 def clean_doc(doc):
     if doc and "_id" in doc:
         del doc["_id"]
@@ -163,6 +195,46 @@ def clean_doc(doc):
 
 def clean_docs(docs):
     return [clean_doc(d) for d in docs]
+
+# ==================== HEALTH & STARTUP ====================
+
+@api_router.get("/health")
+async def health_check():
+    try:
+        await db.command("ping")
+        return {"status": "healthy", "database": "connected", "version": "1.0.0"}
+    except Exception:
+        raise HTTPException(503, "Database unavailable")
+
+@app.on_event("startup")
+async def create_indexes():
+    await db.projects.create_index("id", unique=True)
+    await db.worlds.create_index([("project_id", 1), ("id", 1)])
+    await db.characters.create_index([("project_id", 1), ("id", 1)])
+    await db.objects.create_index([("project_id", 1), ("id", 1)])
+    await db.scenes.create_index([("project_id", 1), ("scene_number", 1)])
+    await db.shots.create_index([("project_id", 1), ("scene_id", 1), ("shot_number", 1)])
+    await db.shots.create_index([("project_id", 1), ("production_status", 1)])
+    await db.compilations.create_index([("project_id", 1), ("shot_id", 1)])
+    await db.secrets.create_index("key", unique=True)
+    logger.info("MongoDB indexes created")
+
+# ==================== SECRETS MANAGEMENT ====================
+
+@api_router.get("/secrets")
+async def list_secrets():
+    secrets = await db.secrets.find({}, {"_id": 0}).to_list(50)
+    return [{"key": s["key"], "value": s["value"][:8] + "..." if len(s.get("value", "")) > 8 else s.get("value", ""), "set": bool(s.get("value"))} for s in secrets]
+
+@api_router.put("/secrets")
+async def update_secret(data: SecretUpdate):
+    await db.secrets.update_one({"key": data.key}, {"$set": {"key": data.key, "value": data.value, "updated_at": utcnow()}}, upsert=True)
+    return {"status": "updated", "key": data.key}
+
+@api_router.delete("/secrets/{key}")
+async def delete_secret(key: str):
+    await db.secrets.delete_one({"key": key})
+    return {"status": "deleted"}
 
 # ==================== PROJECTS ====================
 
@@ -179,14 +251,16 @@ async def create_project(data: ProjectCreate):
 async def list_projects():
     projects = await db.projects.find({}, {"_id": 0}).to_list(100)
     for p in projects:
-        p["world_count"] = await db.worlds.count_documents({"project_id": p["id"]})
-        p["character_count"] = await db.characters.count_documents({"project_id": p["id"]})
-        p["shot_count"] = await db.shots.count_documents({"project_id": p["id"]})
-        shots = await db.shots.find({"project_id": p["id"]}, {"_id": 0, "production_status": 1}).to_list(1000)
+        pid = p["id"]
+        p["world_count"] = await db.worlds.count_documents({"project_id": pid})
+        p["character_count"] = await db.characters.count_documents({"project_id": pid})
+        p["shot_count"] = await db.shots.count_documents({"project_id": pid})
+        shots = await db.shots.find({"project_id": pid}, {"_id": 0, "production_status": 1, "duration_target_sec": 1}).to_list(1000)
         total = len(shots)
         done = sum(1 for s in shots if s.get("production_status") == "final")
         p["completion_pct"] = round((done / total * 100) if total > 0 else 0, 1)
-        p["total_duration"] = sum(s.get("duration_target_sec", 0) for s in await db.shots.find({"project_id": p["id"]}, {"_id": 0, "duration_target_sec": 1}).to_list(1000))
+        p["total_duration"] = sum(s.get("duration_target_sec", 0) for s in shots)
+        p["target_duration_sec"] = p.get("target_duration_sec", 300)
     return projects
 
 @api_router.get("/projects/{project_id}")
@@ -194,20 +268,17 @@ async def get_project(project_id: str):
     doc = await db.projects.find_one({"id": project_id}, {"_id": 0})
     if not doc:
         raise HTTPException(404, "Project not found")
-    doc["world_count"] = await db.worlds.count_documents({"project_id": project_id})
-    doc["character_count"] = await db.characters.count_documents({"project_id": project_id})
-    doc["shot_count"] = await db.shots.count_documents({"project_id": project_id})
-    doc["scene_count"] = await db.scenes.count_documents({"project_id": project_id})
-    doc["object_count"] = await db.objects.count_documents({"project_id": project_id})
-    shots = await db.shots.find({"project_id": project_id}, {"_id": 0, "production_status": 1, "duration_target_sec": 1}).to_list(1000)
-    total = len(shots)
+    pid = project_id
+    doc["world_count"] = await db.worlds.count_documents({"project_id": pid})
+    doc["character_count"] = await db.characters.count_documents({"project_id": pid})
+    doc["shot_count"] = await db.shots.count_documents({"project_id": pid})
+    doc["scene_count"] = await db.scenes.count_documents({"project_id": pid})
+    doc["object_count"] = await db.objects.count_documents({"project_id": pid})
+    shots = await db.shots.find({"project_id": pid}, {"_id": 0, "production_status": 1, "duration_target_sec": 1}).to_list(1000)
     done = sum(1 for s in shots if s.get("production_status") == "final")
-    doc["completion_pct"] = round((done / total * 100) if total > 0 else 0, 1)
+    doc["completion_pct"] = round((done / len(shots) * 100) if shots else 0, 1)
     doc["total_duration"] = sum(s.get("duration_target_sec", 0) for s in shots)
-    stage_counts = {}
-    for stage in PRODUCTION_STAGES:
-        stage_counts[stage] = sum(1 for s in shots if s.get("production_status") == stage)
-    doc["stage_counts"] = stage_counts
+    doc["stage_counts"] = {stage: sum(1 for s in shots if s.get("production_status") == stage) for stage in PRODUCTION_STAGES}
     return doc
 
 @api_router.put("/projects/{project_id}")
@@ -221,12 +292,12 @@ async def update_project(project_id: str, data: ProjectCreate):
 
 @api_router.delete("/projects/{project_id}")
 async def delete_project(project_id: str):
-    await db.projects.delete_one({"id": project_id})
-    await db.worlds.delete_many({"project_id": project_id})
-    await db.characters.delete_many({"project_id": project_id})
-    await db.objects.delete_many({"project_id": project_id})
-    await db.scenes.delete_many({"project_id": project_id})
-    await db.shots.delete_many({"project_id": project_id})
+    for coll in [db.projects, db.worlds, db.characters, db.objects, db.scenes, db.shots, db.compilations]:
+        q = {"id": project_id} if coll == db.projects else {"project_id": project_id}
+        if coll == db.projects:
+            await coll.delete_one(q)
+        else:
+            await coll.delete_many(q)
     return {"status": "deleted"}
 
 # ==================== WORLDS ====================
@@ -247,16 +318,13 @@ async def list_worlds(project_id: str):
 @api_router.get("/projects/{project_id}/worlds/{world_id}")
 async def get_world(project_id: str, world_id: str):
     doc = await db.worlds.find_one({"id": world_id, "project_id": project_id}, {"_id": 0})
-    if not doc:
-        raise HTTPException(404, "World not found")
+    if not doc: raise HTTPException(404, "World not found")
     return doc
 
 @api_router.put("/projects/{project_id}/worlds/{world_id}")
 async def update_world(project_id: str, world_id: str, data: WorldCreate):
-    update = data.model_dump()
-    result = await db.worlds.update_one({"id": world_id, "project_id": project_id}, {"$set": update})
-    if result.matched_count == 0:
-        raise HTTPException(404, "World not found")
+    result = await db.worlds.update_one({"id": world_id, "project_id": project_id}, {"$set": data.model_dump()})
+    if result.matched_count == 0: raise HTTPException(404, "World not found")
     return await get_world(project_id, world_id)
 
 @api_router.delete("/projects/{project_id}/worlds/{world_id}")
@@ -279,14 +347,17 @@ async def create_character(project_id: str, data: CharacterCreate):
 async def list_characters(project_id: str):
     return clean_docs(await db.characters.find({"project_id": project_id}, {"_id": 0}).to_list(500))
 
+@api_router.get("/projects/{project_id}/characters/{char_id}")
+async def get_character(project_id: str, char_id: str):
+    doc = await db.characters.find_one({"id": char_id, "project_id": project_id}, {"_id": 0})
+    if not doc: raise HTTPException(404, "Character not found")
+    return doc
+
 @api_router.put("/projects/{project_id}/characters/{char_id}")
 async def update_character(project_id: str, char_id: str, data: CharacterCreate):
-    update = data.model_dump()
-    result = await db.characters.update_one({"id": char_id, "project_id": project_id}, {"$set": update})
-    if result.matched_count == 0:
-        raise HTTPException(404, "Character not found")
-    doc = await db.characters.find_one({"id": char_id}, {"_id": 0})
-    return doc
+    result = await db.characters.update_one({"id": char_id, "project_id": project_id}, {"$set": data.model_dump()})
+    if result.matched_count == 0: raise HTTPException(404, "Character not found")
+    return await get_character(project_id, char_id)
 
 @api_router.delete("/projects/{project_id}/characters/{char_id}")
 async def delete_character(project_id: str, char_id: str):
@@ -307,6 +378,18 @@ async def create_object(project_id: str, data: ObjectCreate):
 @api_router.get("/projects/{project_id}/objects")
 async def list_objects(project_id: str):
     return clean_docs(await db.objects.find({"project_id": project_id}, {"_id": 0}).to_list(500))
+
+@api_router.get("/projects/{project_id}/objects/{obj_id}")
+async def get_object(project_id: str, obj_id: str):
+    doc = await db.objects.find_one({"id": obj_id, "project_id": project_id}, {"_id": 0})
+    if not doc: raise HTTPException(404, "Object not found")
+    return doc
+
+@api_router.put("/projects/{project_id}/objects/{obj_id}")
+async def update_object(project_id: str, obj_id: str, data: ObjectCreate):
+    result = await db.objects.update_one({"id": obj_id, "project_id": project_id}, {"$set": data.model_dump()})
+    if result.matched_count == 0: raise HTTPException(404, "Object not found")
+    return await get_object(project_id, obj_id)
 
 @api_router.delete("/projects/{project_id}/objects/{obj_id}")
 async def delete_object(project_id: str, obj_id: str):
@@ -331,14 +414,17 @@ async def list_scenes(project_id: str):
         s["shot_count"] = await db.shots.count_documents({"scene_id": s["id"], "project_id": project_id})
     return scenes
 
+@api_router.get("/projects/{project_id}/scenes/{scene_id}")
+async def get_scene(project_id: str, scene_id: str):
+    doc = await db.scenes.find_one({"id": scene_id, "project_id": project_id}, {"_id": 0})
+    if not doc: raise HTTPException(404, "Scene not found")
+    return doc
+
 @api_router.put("/projects/{project_id}/scenes/{scene_id}")
 async def update_scene(project_id: str, scene_id: str, data: SceneCreate):
-    update = data.model_dump()
-    result = await db.scenes.update_one({"id": scene_id, "project_id": project_id}, {"$set": update})
-    if result.matched_count == 0:
-        raise HTTPException(404, "Scene not found")
-    doc = await db.scenes.find_one({"id": scene_id}, {"_id": 0})
-    return doc
+    result = await db.scenes.update_one({"id": scene_id, "project_id": project_id}, {"$set": data.model_dump()})
+    if result.matched_count == 0: raise HTTPException(404, "Scene not found")
+    return await get_scene(project_id, scene_id)
 
 @api_router.delete("/projects/{project_id}/scenes/{scene_id}")
 async def delete_scene(project_id: str, scene_id: str):
@@ -359,28 +445,24 @@ async def create_shot(project_id: str, data: ShotCreate):
     return clean_doc(doc)
 
 @api_router.get("/projects/{project_id}/shots")
-async def list_shots(project_id: str, scene_id: Optional[str] = None):
+async def list_shots(project_id: str, scene_id: Optional[str] = None, status: Optional[str] = None):
     query = {"project_id": project_id}
-    if scene_id:
-        query["scene_id"] = scene_id
-    shots = clean_docs(await db.shots.find(query, {"_id": 0}).sort("shot_number", 1).to_list(1000))
-    return shots
+    if scene_id: query["scene_id"] = scene_id
+    if status: query["production_status"] = status
+    return clean_docs(await db.shots.find(query, {"_id": 0}).sort("shot_number", 1).to_list(1000))
 
 @api_router.get("/projects/{project_id}/shots/{shot_id}")
 async def get_shot(project_id: str, shot_id: str):
     doc = await db.shots.find_one({"id": shot_id, "project_id": project_id}, {"_id": 0})
-    if not doc:
-        raise HTTPException(404, "Shot not found")
+    if not doc: raise HTTPException(404, "Shot not found")
     return doc
 
 @api_router.put("/projects/{project_id}/shots/{shot_id}")
 async def update_shot(project_id: str, shot_id: str, data: ShotUpdate):
-    update = {k: v for k, v in data.model_dump().items() if v is not None}
-    if not update:
-        raise HTTPException(400, "No fields to update")
+    update = {k: v for k, v in data.model_dump(exclude_unset=True).items()}
+    if not update: raise HTTPException(400, "No fields to update")
     result = await db.shots.update_one({"id": shot_id, "project_id": project_id}, {"$set": update})
-    if result.matched_count == 0:
-        raise HTTPException(404, "Shot not found")
+    if result.matched_count == 0: raise HTTPException(404, "Shot not found")
     return await get_shot(project_id, shot_id)
 
 @api_router.patch("/projects/{project_id}/shots/{shot_id}/status")
@@ -388,137 +470,194 @@ async def update_shot_status(project_id: str, shot_id: str, status: str = Query(
     if status not in PRODUCTION_STAGES:
         raise HTTPException(400, f"Invalid status. Must be one of: {PRODUCTION_STAGES}")
     result = await db.shots.update_one({"id": shot_id, "project_id": project_id}, {"$set": {"production_status": status}})
-    if result.matched_count == 0:
-        raise HTTPException(404, "Shot not found")
+    if result.matched_count == 0: raise HTTPException(404, "Shot not found")
     return {"status": "updated", "new_status": status}
+
+@api_router.post("/projects/{project_id}/shots/batch-status")
+async def batch_update_status(project_id: str, data: BatchStatusUpdate):
+    if data.status not in PRODUCTION_STAGES:
+        raise HTTPException(400, f"Invalid status")
+    result = await db.shots.update_many(
+        {"id": {"$in": data.shot_ids}, "project_id": project_id},
+        {"$set": {"production_status": data.status}}
+    )
+    return {"status": "updated", "modified": result.modified_count}
 
 @api_router.delete("/projects/{project_id}/shots/{shot_id}")
 async def delete_shot(project_id: str, shot_id: str):
     await db.shots.delete_one({"id": shot_id, "project_id": project_id})
     return {"status": "deleted"}
 
+# ==================== FRAME CONTINUITY ====================
+
+@api_router.get("/projects/{project_id}/continuity")
+async def get_continuity_chain(project_id: str):
+    """Returns all shots in order with frame continuity data for the entire project."""
+    shots = clean_docs(await db.shots.find({"project_id": project_id}, {"_id": 0}).sort("shot_number", 1).to_list(1000))
+    chain = []
+    for i, shot in enumerate(shots):
+        entry = {
+            "shot_id": shot["id"],
+            "shot_number": shot["shot_number"],
+            "description": shot.get("description", ""),
+            "first_frame_url": shot.get("first_frame_url", ""),
+            "last_frame_url": shot.get("last_frame_url", ""),
+            "transition_in": shot.get("transition_in", "cut"),
+            "transition_out": shot.get("transition_out", "cut"),
+            "prev_shot_last_frame": shots[i - 1].get("last_frame_url", "") if i > 0 else "",
+            "next_shot_first_frame": shots[i + 1].get("first_frame_url", "") if i < len(shots) - 1 else "",
+        }
+        chain.append(entry)
+    return chain
+
+# ==================== AI IMAGE DESCRIPTION ====================
+
+@api_router.post("/projects/{project_id}/describe-image")
+async def describe_image(project_id: str, data: ImageDescribeRequest):
+    """AI describes an image URL and generates structured entity description."""
+    api_key = await get_api_key()
+    if not api_key:
+        raise HTTPException(400, "No API key configured. Set EMERGENT_LLM_KEY in Settings > Secrets.")
+
+    prompts_by_type = {
+        "world": "Describe this image as a WORLD/LOCATION for an animated production. Output JSON: {\"name\": \"\", \"description\": \"\", \"emotional_zone\": \"\", \"atmosphere\": \"\", \"lighting_notes\": \"\", \"spatial_character\": \"\", \"time_of_day\": \"\", \"weather\": \"\"}",
+        "character": "Describe this image as a CHARACTER for an animated production. Output JSON: {\"name\": \"\", \"role\": \"\", \"description\": \"\", \"personality\": \"\", \"visual_notes\": \"\", \"voice_profile\": \"\"}",
+        "prop": "Describe this image as a PROP/OBJECT for an animated production. Output JSON: {\"name\": \"\", \"category\": \"\", \"description\": \"\", \"narrative_significance\": \"\", \"usage_notes\": \"\"}",
+    }
+
+    system_msg = f"""You are a production designer analyzing reference images for an AI-generated animated short.
+{prompts_by_type.get(data.entity_type, prompts_by_type['world'])}
+{f'Additional context: {data.additional_context}' if data.additional_context else ''}
+Output ONLY valid JSON. Be cinematic, specific, and production-ready in your descriptions."""
+
+    try:
+        chat = LlmChat(api_key=api_key, session_id=f"describe-{new_id()}", system_message=system_msg).with_model("openai", "gpt-5.2")
+        response = await chat.send_message(UserMessage(text=f"Analyze this image for production use: {data.image_url}"))
+        text = response.strip()
+        if text.startswith("```"): text = "\n".join(text.split("\n")[1:-1])
+        result = json.loads(text)
+        return {"status": "described", "entity_type": data.entity_type, "result": result, "source_image": data.image_url}
+    except json.JSONDecodeError:
+        return {"status": "described", "entity_type": data.entity_type, "result": {"raw_response": text}, "source_image": data.image_url}
+    except Exception as e:
+        raise HTTPException(500, f"Image description failed: {str(e)}")
+
 # ==================== AI SCENE COMPILER ====================
 
 @api_router.post("/projects/{project_id}/compile")
 async def compile_scene(project_id: str, data: CompileRequest):
     project = await db.projects.find_one({"id": project_id}, {"_id": 0})
-    if not project:
-        raise HTTPException(404, "Project not found")
+    if not project: raise HTTPException(404, "Project not found")
 
     world_context = ""
     if data.world_id:
         world = await db.worlds.find_one({"id": data.world_id}, {"_id": 0})
         if world:
-            world_context = f"""
-WORLD/LOCATION: {world.get('name', '')}
-Description: {world.get('description', '')}
-Emotional Zone: {world.get('emotional_zone', '')}
-Atmosphere: {world.get('atmosphere', '')}
-Lighting: {world.get('lighting_notes', '')}
-Spatial Character: {world.get('spatial_character', '')}
-Marble URL: {world.get('marble_url', '')}"""
+            world_context = f"\nWORLD: {world.get('name','')}\nDescription: {world.get('description','')}\nZone: {world.get('emotional_zone','')}\nAtmosphere: {world.get('atmosphere','')}\nLighting: {world.get('lighting_notes','')}\nSpatial: {world.get('spatial_character','')}"
+            if world.get("reference_images"):
+                world_context += f"\nWorld Reference Images: {', '.join(world['reference_images'][:3])}"
 
     char_context = ""
     if data.character_ids:
         chars = clean_docs(await db.characters.find({"id": {"$in": data.character_ids}, "project_id": project_id}, {"_id": 0}).to_list(20))
         for c in chars:
-            char_context += f"""
-CHARACTER: {c.get('name', '')} ({c.get('role', '')})
-Description: {c.get('description', '')}
-Personality: {c.get('personality', '')}
-Visual Notes: {c.get('visual_notes', '')}
-Voice: {c.get('voice_profile', '')}
-"""
+            char_context += f"\nCHARACTER: {c.get('name','')} ({c.get('role','')})\nDescription: {c.get('description','')}\nVisual: {c.get('visual_notes','')}\nPersonality: {c.get('personality','')}"
+            if c.get("identity_images"):
+                char_context += f"\nIdentity Reference: {', '.join(c['identity_images'][:2])}"
 
-    brand_context = f"""
-PROJECT: {project.get('name', '')}
-Primary Brand: {project.get('brand_primary', '')}
-Secondary Brand: {project.get('brand_secondary', '')}
-Visual Style: {project.get('visual_style', '')}
-Compliance: {', '.join(project.get('compliance_notes', []))}
-Forbidden Elements: {', '.join(project.get('forbidden_elements', []))}
-Required Elements: {', '.join(project.get('required_elements', []))}"""
+    frame_context = ""
+    if data.prev_shot_last_frame:
+        frame_context += f"\nFRAME CONTINUITY — Previous shot ends with this frame: {data.prev_shot_last_frame}"
+        frame_context += "\nIMPORTANT: The opening of this shot must visually match/continue from the previous shot's last frame."
+    if data.next_shot_first_frame:
+        frame_context += f"\nFRAME CONTINUITY — Next shot begins with this frame: {data.next_shot_first_frame}"
+        frame_context += "\nIMPORTANT: The ending of this shot must set up a visual bridge to the next shot's first frame."
 
-    system_prompt = """You are StoryForge Scene Compiler — an expert AI cinematographer and production designer. 
-You take natural language scene descriptions and generate structured production prompts.
+    ref_images_context = ""
+    if data.reference_images:
+        ref_images_context = f"\nSHOT REFERENCE IMAGES (use as visual guidance): {', '.join(data.reference_images[:5])}"
 
-You MUST output a JSON object with these exact keys:
+    brand = f"\nPROJECT: {project.get('name','')}\nBrand: {project.get('brand_primary','')}\nStyle: {project.get('visual_style','')}\nCompliance: {', '.join(project.get('compliance_notes',[]))}\nForbidden: {', '.join(project.get('forbidden_elements',[]))}"
+
+    system_prompt = """You are StoryForge Scene Compiler — expert AI cinematographer and production designer.
+Generate structured prompts from natural language scene descriptions.
+
+Output ONLY a JSON object:
 {
-  "image_prompt": "A detailed prompt for image generation (for ArtCraft/Nano Banana Pro/Midjourney). Be specific about composition, lighting, color palette, mood, and subjects.",
-  "video_prompt": "A prompt for video generation (for Veo/Kling/Sora). Describe motion, camera movement, timing, and action.",
+  "image_prompt": "Detailed image generation prompt for ArtCraft/Nano Banana Pro/Midjourney. Include composition, lighting, color, mood, subjects. If reference images or frame continuity URLs are provided, reference them as visual anchors.",
+  "video_prompt": "Video generation prompt for Veo/Kling/Sora. Describe motion, camera, timing, action. If frame continuity is specified, describe how this shot bridges from/to adjacent shots.",
   "audio_stack": {
-    "sound_design": "Primary environmental and foley sound elements",
+    "sound_design": "Primary environmental and foley elements",
     "volume_layers": "BACKGROUND: [element] at [level] | MIDGROUND: [element] at [level] | FOREGROUND: [element] at [level]",
-    "spatial": "Spatial positioning, movement, and stereo/surround placement",
-    "narrative": "Emotional beats and narrative function of the audio",
-    "exclude": "Elements to explicitly exclude from audio generation"
+    "spatial": "Spatial positioning, movement, stereo/surround",
+    "narrative": "Emotional beats and narrative function",
+    "exclude": "Elements to exclude from audio generation"
   },
-  "director_notes": "Brief suggestions for blocking, timing, transitions, and coherence with adjacent shots",
-  "coherence_flags": ["Any potential inconsistencies with the established world/character bible"]
+  "director_notes": "Blocking, timing, transitions, coherence notes",
+  "coherence_flags": ["Any inconsistencies with world/character bible"],
+  "continuity_notes": "How this shot connects visually to previous/next shots"
 }
 
 RULES:
-- Honor the brand config and compliance rails — never violate forbidden elements
-- Reference the world's established atmosphere and lighting
-- Keep characters visually consistent with their identity sheets
-- The audio stack follows the Intent → Constraint → Emission architecture
-- Output ONLY valid JSON, no markdown wrapping"""
+- Honor brand config and compliance rails
+- Reference established world atmosphere and lighting
+- Keep characters visually consistent with identity sheets
+- If frame continuity URLs are provided, explicitly describe visual matching
+- Audio follows Intent → Constraint → Emission architecture
+- Output ONLY valid JSON"""
 
-    user_prompt = f"""{brand_context}
-{world_context}
-{char_context}
+    user_prompt = f"""{brand}{world_context}{char_context}{frame_context}{ref_images_context}
 
 SHOT PARAMETERS:
-Emotional Zone: {data.emotional_zone}
-Framing: {data.framing}
-Camera Movement: {data.camera_movement}
-Time of Day: {data.time_of_day or project.get('default_time_of_day', 'day')}
+Zone: {data.emotional_zone} | Framing: {data.framing} | Camera: {data.camera_movement}
+Time: {data.time_of_day or project.get('default_time_of_day', 'day')}
 Weather: {data.weather or project.get('default_weather', 'clear')}
-{f'Additional Context: {data.additional_context}' if data.additional_context else ''}
+{f'Context: {data.additional_context}' if data.additional_context else ''}
 
-SCENE DESCRIPTION:
-{data.scene_description}
+SCENE: {data.scene_description}
 
-Generate the structured production prompts as JSON."""
+Generate production prompts as JSON."""
 
     try:
-        api_key = os.environ.get("EMERGENT_LLM_KEY", "")
-        chat = LlmChat(
-            api_key=api_key,
-            session_id=f"compile-{new_id()}",
-            system_message=system_prompt
-        ).with_model("openai", "gpt-5.2")
-
+        api_key = await get_api_key()
+        chat = LlmChat(api_key=api_key, session_id=f"compile-{new_id()}", system_message=system_prompt).with_model("openai", "gpt-5.2")
         response = await chat.send_message(UserMessage(text=user_prompt))
+        text = response.strip()
+        if text.startswith("```"): text = "\n".join(text.split("\n")[1:-1])
+        compiled = json.loads(text)
 
-        import json
-        response_text = response.strip()
-        if response_text.startswith("```"):
-            lines = response_text.split("\n")
-            response_text = "\n".join(lines[1:-1])
+        log_entry = {"id": new_id(), "project_id": project_id, "shot_id": data.shot_id or "", "timestamp": utcnow(), "input": data.model_dump(), "output": compiled}
+        await db.compilations.insert_one(log_entry)
+        del log_entry["_id"]
 
-        compiled = json.loads(response_text)
-
-        log_entry = {
-            "timestamp": utcnow(),
-            "input_description": data.scene_description,
-            "output": compiled
-        }
-
-        return {
-            "status": "compiled",
-            "result": compiled,
-            "log_entry": log_entry
-        }
+        return {"status": "compiled", "result": compiled, "compilation_id": log_entry["id"]}
     except json.JSONDecodeError:
-        return {
-            "status": "compiled",
-            "result": {"raw_response": response_text},
-            "log_entry": {"timestamp": utcnow(), "error": "JSON parse failed", "raw": response_text}
-        }
+        return {"status": "compiled", "result": {"raw_response": text}, "parse_error": True}
     except Exception as e:
         logger.error(f"Compilation error: {e}")
         raise HTTPException(500, f"AI compilation failed: {str(e)}")
+
+# ==================== COMPILATION HISTORY ====================
+
+@api_router.get("/projects/{project_id}/compilations")
+async def list_compilations(project_id: str, shot_id: Optional[str] = None):
+    query = {"project_id": project_id}
+    if shot_id: query["shot_id"] = shot_id
+    comps = clean_docs(await db.compilations.find(query, {"_id": 0}).sort("timestamp", -1).to_list(100))
+    return comps
+
+# ==================== EXPORT ====================
+
+@api_router.get("/projects/{project_id}/export")
+async def export_project(project_id: str):
+    project = await db.projects.find_one({"id": project_id}, {"_id": 0})
+    if not project: raise HTTPException(404, "Project not found")
+    project["worlds"] = clean_docs(await db.worlds.find({"project_id": project_id}, {"_id": 0}).to_list(500))
+    project["characters"] = clean_docs(await db.characters.find({"project_id": project_id}, {"_id": 0}).to_list(500))
+    project["objects"] = clean_docs(await db.objects.find({"project_id": project_id}, {"_id": 0}).to_list(500))
+    project["scenes"] = clean_docs(await db.scenes.find({"project_id": project_id}, {"_id": 0}).sort("scene_number", 1).to_list(500))
+    project["shots"] = clean_docs(await db.shots.find({"project_id": project_id}, {"_id": 0}).sort("shot_number", 1).to_list(1000))
+    return project
 
 # ==================== DASHBOARD STATS ====================
 
@@ -529,31 +668,17 @@ async def dashboard_stats():
     total_worlds = await db.worlds.count_documents({})
     total_characters = await db.characters.count_documents({})
     shots = await db.shots.find({}, {"_id": 0, "production_status": 1, "duration_target_sec": 1}).to_list(10000)
-    stage_counts = {}
-    for stage in PRODUCTION_STAGES:
-        stage_counts[stage] = sum(1 for s in shots if s.get("production_status") == stage)
+    stage_counts = {stage: sum(1 for s in shots if s.get("production_status") == stage) for stage in PRODUCTION_STAGES}
     total_duration = sum(s.get("duration_target_sec", 0) for s in shots)
-    return {
-        "project_count": project_count,
-        "total_shots": total_shots,
-        "total_worlds": total_worlds,
-        "total_characters": total_characters,
-        "stage_counts": stage_counts,
-        "total_duration_sec": total_duration
-    }
+    return {"project_count": project_count, "total_shots": total_shots, "total_worlds": total_worlds, "total_characters": total_characters, "stage_counts": stage_counts, "total_duration_sec": total_duration}
 
 # ==================== ENUMS ====================
 
 @api_router.get("/enums")
 async def get_enums():
-    return {
-        "production_stages": PRODUCTION_STAGES,
-        "emotional_zones": EMOTIONAL_ZONES,
-        "framings": FRAMINGS,
-        "camera_movements": CAMERA_MOVEMENTS
-    }
+    return {"production_stages": PRODUCTION_STAGES, "emotional_zones": EMOTIONAL_ZONES, "framings": FRAMINGS, "camera_movements": CAMERA_MOVEMENTS, "transition_types": TRANSITION_TYPES}
 
-# ==================== SEED MITO FROM NOTION ====================
+# ==================== SEED MITO ====================
 
 @api_router.post("/seed/mito")
 async def seed_mito_project():
@@ -563,122 +688,88 @@ async def seed_mito_project():
 
     pid = new_id()
     project = {
-        "id": pid,
-        "name": "Mito — The Animated Short",
-        "brand_primary": "Everything's Energy",
-        "brand_secondary": "EESYS / EESystem",
+        "id": pid, "name": "Mito — The Animated Short",
+        "brand_primary": "Everything's Energy", "brand_secondary": "EESYS / EESystem",
         "description": "A 5-minute animated short exploring consciousness, scalar energy, and cellular healing through the journey of Mito — a mitochondrial entity awakening to its potential.",
         "compliance_notes": ["Content must respect the EESystem brand", "No medical claims — position as educational/exploratory", "Ethical sound design by construction"],
         "forbidden_elements": ["Cheap emotional manipulation", "Horror tropes without purpose", "Generic stock imagery aesthetics"],
         "required_elements": ["Consistent character identity across all shots", "Declarative media grammar (Intent/Constraint/Emission)", "Zone-aware audio design"],
         "visual_style": "Cinematic, ethereal, bioluminescent. Think cellular landscapes meeting cosmic vistas. Color palette: deep indigos, electric teals, warm ambers for healing moments.",
-        "default_time_of_day": "twilight",
-        "default_weather": "clear",
-        "default_lighting": "bioluminescent",
-        "default_aspect_ratio": "16:9",
+        "default_time_of_day": "twilight", "default_weather": "clear", "default_lighting": "bioluminescent",
+        "default_aspect_ratio": "16:9", "target_duration_sec": 300.0,
         "model_preferences": {"image": "Nano Banana Pro", "video": "Veo 3.1", "world": "Marble (WorldLabs)"},
         "tags": ["animated_short", "eesystem", "consciousness", "healing"],
-        "created_at": utcnow(),
-        "updated_at": utcnow()
+        "created_at": utcnow(), "updated_at": utcnow()
     }
     await db.projects.insert_one(project)
 
     worlds_data = [
         {"name": "The Cellular Interior", "description": "Inside a living cell — mitochondria, organelles, flowing cytoplasm. Bioluminescent structures pulse with energy.", "emotional_zone": "intimate", "atmosphere": "Warm, alive, pulsing with potential", "spatial_character": "intimate/enclosed", "lighting_notes": "Bioluminescent — soft blue-green glow from organelles, warm amber from energy production"},
-        {"name": "The Neural Network", "description": "Vast interconnected pathways of neurons firing. Synaptic gaps bridged by light. Scale shifts from microscopic to cosmic.", "emotional_zone": "revelatory", "atmosphere": "Electric, expansive, awe-inspiring", "spatial_character": "vast/infinite", "lighting_notes": "Electric blue synaptic flashes against deep purple void"},
+        {"name": "The Neural Network", "description": "Vast interconnected pathways of neurons firing. Synaptic gaps bridged by light.", "emotional_zone": "revelatory", "atmosphere": "Electric, expansive, awe-inspiring", "spatial_character": "vast/infinite", "lighting_notes": "Electric blue synaptic flashes against deep purple void"},
         {"name": "The Wasteland", "description": "A depleted, toxic cellular environment. Damaged structures, dim light, entropy visible.", "emotional_zone": "desolate", "atmosphere": "Decayed, threatening, suffocating", "spatial_character": "vast/barren", "lighting_notes": "Dim, desaturated, occasional sickly yellow-green"},
-        {"name": "The Scalar Field", "description": "Abstract energy patterns — standing waves, interference patterns, golden ratio spirals. Where the EE System operates.", "emotional_zone": "transcendent", "atmosphere": "Pure energy, mathematical beauty, transcendence", "spatial_character": "infinite/unbounded", "lighting_notes": "Pure white-gold energy with prismatic refractions"},
-        {"name": "The Awakening Chamber", "description": "Where Mito first encounters the scalar field. A threshold space between the damaged cell and regeneration.", "emotional_zone": "liminal", "atmosphere": "Transitional, pregnant with possibility", "spatial_character": "threshold/between", "lighting_notes": "Gradient from cold blue to warm gold — the transformation visible in light"},
+        {"name": "The Scalar Field", "description": "Abstract energy patterns — standing waves, interference patterns, golden ratio spirals.", "emotional_zone": "transcendent", "atmosphere": "Pure energy, mathematical beauty, transcendence", "spatial_character": "infinite/unbounded", "lighting_notes": "Pure white-gold energy with prismatic refractions"},
+        {"name": "The Awakening Chamber", "description": "Where Mito first encounters the scalar field. A threshold space between damage and regeneration.", "emotional_zone": "liminal", "atmosphere": "Transitional, pregnant with possibility", "spatial_character": "threshold/between", "lighting_notes": "Gradient from cold blue to warm gold"},
     ]
     for w in worlds_data:
-        w["id"] = new_id()
-        w["project_id"] = pid
-        w["created_at"] = utcnow()
-        w["marble_url"] = ""
-        w["reference_images"] = []
-        w["time_of_day"] = ""
-        w["weather"] = ""
-        w["tags"] = []
+        w.update({"id": new_id(), "project_id": pid, "created_at": utcnow(), "marble_url": "", "reference_images": [], "time_of_day": "", "weather": "", "tags": []})
     await db.worlds.insert_many(worlds_data)
 
     chars_data = [
-        {"name": "Mito", "role": "Protagonist", "description": "A mitochondrial entity — small, luminous, curious. Begins depleted and dim, gradually brightens as it encounters the scalar field.", "personality": "Curious, resilient, innocent but growing in wisdom", "voice_profile": "Childlike wonder evolving to quiet authority", "visual_notes": "Bioluminescent orb with internal structure visible. Color shifts from dim amber to radiant gold.", "motivation_notes": "Survival → Understanding → Purpose → Service", "arc_summary": "From depleted organelle to awakened energy being"},
-        {"name": "The Signal", "role": "Catalyst", "description": "The scalar energy field personified as a presence. Not a character with a face — more a wave, a resonance, a calling.", "personality": "Patient, vast, impersonal but benevolent", "voice_profile": "No voice — expressed through harmonic frequencies and spatial audio", "visual_notes": "Standing wave patterns, golden ratio spirals, interference patterns in light", "motivation_notes": "Exists to activate, not to persuade", "arc_summary": "Constant presence that Mito learns to perceive"},
+        {"name": "Mito", "role": "Protagonist", "description": "A mitochondrial entity — small, luminous, curious. Begins depleted and dim, gradually brightens.", "personality": "Curious, resilient, innocent but growing in wisdom", "voice_profile": "Childlike wonder evolving to quiet authority", "visual_notes": "Bioluminescent orb with internal structure. Color shifts from dim amber to radiant gold.", "motivation_notes": "Survival → Understanding → Purpose → Service", "arc_summary": "From depleted organelle to awakened energy being"},
+        {"name": "The Signal", "role": "Catalyst", "description": "The scalar energy field personified. Not a face — a wave, a resonance, a calling.", "personality": "Patient, vast, impersonal but benevolent", "voice_profile": "No voice — harmonic frequencies and spatial audio", "visual_notes": "Standing wave patterns, golden ratio spirals, interference patterns in light", "motivation_notes": "Exists to activate, not to persuade", "arc_summary": "Constant presence that Mito learns to perceive"},
     ]
     for c in chars_data:
-        c["id"] = new_id()
-        c["project_id"] = pid
-        c["created_at"] = utcnow()
-        c["identity_images"] = []
-        c["relationships"] = []
-        c["tags"] = []
+        c.update({"id": new_id(), "project_id": pid, "created_at": utcnow(), "identity_images": [], "relationships": [], "tags": []})
     await db.characters.insert_many(chars_data)
 
     scenes_data = [
-        {"scene_number": 1, "title": "Diminished Light", "synopsis": "Mito exists in a depleted cell. Low energy, damaged environment. We see the cost of toxicity.", "emotional_zone": "desolate", "narrative_purpose": "Establish stakes — what happens when cellular health fails", "dramatic_tension": 3},
-        {"scene_number": 2, "title": "The First Pulse", "synopsis": "A faint signal reaches Mito. Something external, something new. The scalar field makes first contact.", "emotional_zone": "liminal", "narrative_purpose": "Inciting incident — hope enters the narrative", "dramatic_tension": 5},
-        {"scene_number": 3, "title": "The Awakening", "synopsis": "Mito enters the scalar field. Perception expands. The cell begins to regenerate.", "emotional_zone": "revelatory", "narrative_purpose": "Transformation — the core thesis made visible", "dramatic_tension": 8},
-        {"scene_number": 4, "title": "The Network", "synopsis": "Mito discovers it's connected to millions of others. Neural pathways light up. Collective healing begins.", "emotional_zone": "transcendent", "narrative_purpose": "Scale shift — from individual to collective", "dramatic_tension": 9},
-        {"scene_number": 5, "title": "Radiance", "synopsis": "The cell is restored. Mito pulses with full energy. A new signal goes out — calling the next cell.", "emotional_zone": "triumphant", "narrative_purpose": "Resolution and continuation — healing propagates", "dramatic_tension": 7},
+        {"scene_number": 1, "title": "Diminished Light", "synopsis": "Mito exists in a depleted cell. Low energy, damaged environment.", "emotional_zone": "desolate", "narrative_purpose": "Establish stakes", "dramatic_tension": 3},
+        {"scene_number": 2, "title": "The First Pulse", "synopsis": "A faint signal reaches Mito. The scalar field makes first contact.", "emotional_zone": "liminal", "narrative_purpose": "Inciting incident", "dramatic_tension": 5},
+        {"scene_number": 3, "title": "The Awakening", "synopsis": "Mito enters the scalar field. Perception expands. Regeneration begins.", "emotional_zone": "revelatory", "narrative_purpose": "Transformation", "dramatic_tension": 8},
+        {"scene_number": 4, "title": "The Network", "synopsis": "Mito discovers connection to millions. Collective healing begins.", "emotional_zone": "transcendent", "narrative_purpose": "Scale shift", "dramatic_tension": 9},
+        {"scene_number": 5, "title": "Radiance", "synopsis": "Cell restored. Mito at full energy. A new signal goes out.", "emotional_zone": "triumphant", "narrative_purpose": "Resolution", "dramatic_tension": 7},
     ]
-    world_list = await db.worlds.find({"project_id": pid}, {"_id": 0, "id": 1, "name": 1}).to_list(10)
-    world_map = {w["name"]: w["id"] for w in world_list}
-    scene_world_map = {1: "The Wasteland", 2: "The Awakening Chamber", 3: "The Scalar Field", 4: "The Neural Network", 5: "The Cellular Interior"}
-
-    char_list = await db.characters.find({"project_id": pid}, {"_id": 0, "id": 1}).to_list(10)
-    char_ids = [c["id"] for c in char_list]
+    wlist = await db.worlds.find({"project_id": pid}, {"_id": 0, "id": 1, "name": 1}).to_list(10)
+    wmap = {w["name"]: w["id"] for w in wlist}
+    swmap = {1: "The Wasteland", 2: "The Awakening Chamber", 3: "The Scalar Field", 4: "The Neural Network", 5: "The Cellular Interior"}
+    cids = [c["id"] for c in await db.characters.find({"project_id": pid}, {"_id": 0, "id": 1}).to_list(10)]
 
     for s in scenes_data:
-        s["id"] = new_id()
-        s["project_id"] = pid
-        s["created_at"] = utcnow()
-        wname = scene_world_map.get(s["scene_number"])
-        s["world_id"] = world_map.get(wname, "")
-        s["character_ids"] = char_ids
-        s["time_of_day"] = ""
-        s["weather"] = ""
-        s["lighting"] = ""
-        s["director_notes"] = ""
+        s.update({"id": new_id(), "project_id": pid, "created_at": utcnow(), "world_id": wmap.get(swmap.get(s["scene_number"]), ""), "character_ids": cids, "time_of_day": "", "weather": "", "lighting": "", "director_notes": ""})
     await db.scenes.insert_many(scenes_data)
 
-    shot_num = 1
-    shots_to_insert = []
-    scene_list = await db.scenes.find({"project_id": pid}, {"_id": 0}).sort("scene_number", 1).to_list(20)
-    shots_per_scene = [
-        [("extreme_wide", "dolly_in", 8, "Vast depleted landscape. Mito barely visible."), ("close", "static", 5, "Mito's dim glow flickering."), ("medium", "pan_left", 6, "Damaged structures around Mito.")],
-        [("medium", "static", 5, "Mito senses something. Slight brightening."), ("wide", "crane_up", 7, "The scalar pulse arrives — visible wave."), ("close", "dolly_in", 6, "Mito turns toward the signal.")],
-        [("extreme_wide", "orbit", 8, "Mito enters the scalar field. Explosion of light."), ("close", "static", 5, "Mito's internal structure transforming."), ("medium_wide", "tracking", 7, "Energy flowing through the cell.")],
-        [("extreme_wide", "crane_up", 8, "Neural network revealed. Millions of connections."), ("medium", "tracking", 6, "Following the signal along pathways."), ("wide", "orbit", 8, "Collective activation — cells lighting up.")],
-        [("medium", "dolly_out", 6, "Mito at full radiance."), ("wide", "crane_up", 7, "The restored cell, vibrant and alive."), ("extreme_wide", "static", 8, "A new signal goes out. The cycle continues.")],
+    slist = await db.scenes.find({"project_id": pid}, {"_id": 0}).sort("scene_number", 1).to_list(20)
+    shots_per = [
+        [("extreme_wide","dolly_in",8,"Vast depleted landscape. Mito barely visible."),("close","static",5,"Mito's dim glow flickering."),("medium","pan_left",6,"Damaged structures around Mito.")],
+        [("medium","static",5,"Mito senses something. Slight brightening."),("wide","crane_up",7,"The scalar pulse arrives — visible wave."),("close","dolly_in",6,"Mito turns toward the signal.")],
+        [("extreme_wide","orbit",8,"Mito enters the scalar field. Explosion of light."),("close","static",5,"Mito's internal structure transforming."),("medium_wide","tracking",7,"Energy flowing through the cell.")],
+        [("extreme_wide","crane_up",8,"Neural network revealed. Millions of connections."),("medium","tracking",6,"Following the signal along pathways."),("wide","orbit",8,"Collective activation — cells lighting up.")],
+        [("medium","dolly_out",6,"Mito at full radiance."),("wide","crane_up",7,"The restored cell, vibrant and alive."),("extreme_wide","static",8,"A new signal goes out. The cycle continues.")],
     ]
-    for idx, scene in enumerate(scene_list):
-        for framing, movement, dur, desc in shots_per_scene[idx]:
-            shots_to_insert.append({
-                "id": new_id(), "project_id": pid, "scene_id": scene["id"],
-                "shot_number": shot_num, "duration_target_sec": dur,
-                "framing": framing, "camera_movement": movement, "camera_notes": "",
+    snum = 1
+    inserts = []
+    for idx, sc in enumerate(slist):
+        for fr, mv, dur, desc in shots_per[idx]:
+            t_in = "fade_from_black" if snum == 1 else "cut"
+            t_out = "fade_to_black" if snum == 15 else ("dissolve" if idx < len(slist)-1 and shots_per[idx].index((fr,mv,dur,desc)) == len(shots_per[idx])-1 else "cut")
+            inserts.append({
+                "id": new_id(), "project_id": pid, "scene_id": sc["id"], "shot_number": snum,
+                "duration_target_sec": dur, "framing": fr, "camera_movement": mv, "camera_notes": "",
                 "description": desc, "intent": "", "constraint": "", "emission": "",
                 "sound_design": "", "volume_layers": "", "spatial": "", "narrative": "", "exclude": "",
                 "production_status": "concept", "reference_frame_url": "", "generated_asset_url": "",
-                "notes": "", "ai_generation_log": [], "created_at": utcnow()
+                "first_frame_url": "", "last_frame_url": "", "transition_in": t_in, "transition_out": t_out,
+                "reference_images": [], "notes": "", "ai_generation_log": [], "created_at": utcnow()
             })
-            shot_num += 1
-    if shots_to_insert:
-        await db.shots.insert_many(shots_to_insert)
+            snum += 1
+    if inserts: await db.shots.insert_many(inserts)
 
-    return {"status": "seeded", "project_id": pid, "worlds": len(worlds_data), "characters": len(chars_data), "scenes": len(scenes_data), "shots": len(shots_to_insert)}
+    return {"status": "seeded", "project_id": pid, "worlds": len(worlds_data), "characters": len(chars_data), "scenes": len(scenes_data), "shots": len(inserts)}
 
-# ==================== APP SETUP ====================
+# ==================== APP ====================
 
 app.include_router(api_router)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app.add_middleware(CORSMiddleware, allow_credentials=True, allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','), allow_methods=["*"], allow_headers=["*"])
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
