@@ -135,6 +135,7 @@ export default function ProjectSettings({ projectId, project, onUpdate }) {
               className="bg-black/50 border border-zinc-800 rounded-sm px-3 py-2 font-mono text-sm text-zinc-400 focus:border-indigo-500 outline-none" data-testid="secret-key-select">
               <option value="EMERGENT_LLM_KEY">EMERGENT_LLM_KEY</option>
               <option value="NOTION_API_KEY">NOTION_API_KEY</option>
+              <option value="NOTION_DB_ID">NOTION_DB_ID</option>
               <option value="CUSTOM_KEY">Custom Key</option>
             </select>
             <div className="flex-1 relative">
