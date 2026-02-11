@@ -32,6 +32,7 @@ export default function Pipeline({ projectId }) {
     const idx = STAGES.findIndex(s => s.key === shot.production_status);
     if (idx < STAGES.length - 1) {
       await shotsApi.updateStatus(projectId, shot.id, STAGES[idx + 1].key);
+      toast.success(`Shot #${shot.shot_number} → ${STAGES[idx + 1].label}`);
       load();
     }
   };
