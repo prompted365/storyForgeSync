@@ -66,12 +66,20 @@ function WorldCard({ world, onDelete }) {
 function CharacterCard({ char, onDelete }) {
   return (
     <div className="glass-card rounded-sm p-5 trace-border group" data-testid={`char-card-${char.id}`}>
+      {char.identity_images && char.identity_images.length > 0 && (
+        <div className="flex gap-1 mb-3 -mt-1">
+          {char.identity_images.slice(0, 3).map((url, i) => (
+            <img key={i} src={url} alt="" className="h-16 flex-1 object-cover rounded-sm border border-zinc-800" onError={e => e.target.style.display='none'} />
+          ))}
+        </div>
+      )}
       <div className="flex items-start justify-between mb-3">
         <div>
           <h3 className="font-heading font-bold text-lg uppercase tracking-tight text-white">{char.name}</h3>
           <p className="font-mono text-[10px] uppercase tracking-widest text-violet-400">{char.role}</p>
         </div>
-        <Button variant="ghost" size="sm" onClick={() => onDelete(char.id)} className="opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-red-400 h-7 w-7 p-0" data-testid={`delete-char-${char.id}`}>
+        <Button variant="ghost" size="sm" onClick={() => { if(window.confirm(`Delete character "${char.name}"?`)) onDelete(char.id); }}
+          className="opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-red-400 h-7 w-7 p-0" data-testid={`delete-char-${char.id}`}>
           <Trash2 className="w-3.5 h-3.5" />
         </Button>
       </div>
