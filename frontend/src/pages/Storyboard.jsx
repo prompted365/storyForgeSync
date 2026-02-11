@@ -35,7 +35,7 @@ function SortableShotCard({ shot, onSelect, onCompile, isSelected, onToggleSelec
   const style = { transform: CSS.Transform.toString(transform), transition };
 
   return (
-    <div ref={setNodeRef} style={style} className="bg-zinc-950/50 rounded-sm p-4 border border-zinc-800/50 hover:border-indigo-500/30 transition-colors group" data-testid={'shot-card-' + shot.id}>
+    <div ref={setNodeRef} style={style} className="bg-zinc-950/50 rounded-sm p-4 border border-zinc-800/50 hover:border-indigo-500/30 transition-colors group cursor-pointer" data-testid={'shot-card-' + shot.id} onClick={function() { if (!selectMode) onSelect(shot.id); }}>
       <div className="flex items-start gap-2">
         {selectMode && (
           <Checkbox checked={isSelected} onCheckedChange={() => onToggleSelect(shot.id)} className="rounded-sm mt-1" data-testid={'select-shot-' + shot.id} />
