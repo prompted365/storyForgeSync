@@ -188,8 +188,8 @@ export default function WorldBible({ projectId, onUpdate }) {
 
   useEffect(() => { load(); }, [load]);
 
-  const handleDeleteWorld = async (id) => { await worldsApi.delete(projectId, id); load(); onUpdate(); };
-  const handleDeleteChar = async (id) => { await charsApi.delete(projectId, id); load(); onUpdate(); };
+  const handleDeleteWorld = async (id) => { await worldsApi.delete(projectId, id); toast.success('World deleted'); load(); onUpdate(); };
+  const handleDeleteChar = async (id) => { await charsApi.delete(projectId, id); toast.success('Character deleted'); load(); onUpdate(); };
 
   return (
     <div data-testid="world-bible">
