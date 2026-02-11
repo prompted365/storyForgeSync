@@ -1,77 +1,48 @@
 # StoryForge — AI Filmmaking Production Engine
-## PRD v1.1 | Feb 11, 2026
+## PRD v1.2 | Feb 11, 2026
 
-## Original Problem Statement
-"Investigate my notion workspace and surface an application need that we can build to facilitate more efficient work"
-
-## What Was Built
-Universal AI filmmaking production engine. Project-agnostic, config-driven. Works alongside ArtCraft + WorldLabs Marble + any video gen model.
-
-## Architecture
-- **Backend**: FastAPI (Python) on port 8001 — MongoDB — GPT-5.2 via Emergent LLM key
-- **Frontend**: React 19 + Tailwind CSS + shadcn/ui on port 3000
-- **Deployment**: Docker Compose (Dockerfile.backend, Dockerfile.frontend, nginx.conf, docker-compose.yml)
-
-## What's LIVE (v1.1)
-- Full CRUD: Projects, Worlds, Characters, Objects, Scenes, Shots
-- AI Scene Compiler (GPT-5.2, context-aware: brand/world/character/compliance)
-- AI Image Description (URL → structured entity description)
-- Frame Continuity (first_frame_url, last_frame_url, transition_in/out, compiler uses for visual bridging)
-- Reference Images in prompts (world/character/shot reference images passed to compiler)
-- Production Pipeline Kanban (7 stages with advance)
-- Storyboard with scene grouping, tension meters, duration tracking
-- World Bible (worlds with emotional zones, characters with identity sheets, props)
-- Project Settings (brand, compliance, style, defaults, tags, model preferences)
-- Secrets Management (API keys configurable from UI)
+## What's LIVE (v1.2)
+### Backend
+- Full CRUD: Projects, Worlds, Characters, Objects, Scenes, Shots (all with GET/POST/PUT/DELETE)
+- AI Scene Compiler (GPT-5.2) with frame continuity, reference images, brand/world/character context
+- AI Image Description endpoint (URL → structured entity description)
+- Frame Continuity Chain API (returns all shots in order with transition data)
 - Compilation History (stored in DB, queryable per project/shot)
 - Project Export (full JSON)
-- Batch Status Update API
-- Health Check endpoint
-- MongoDB indexes
-- Docker deployment config (Dockerfile.backend, Dockerfile.frontend, docker-compose.yml, nginx.conf)
-- README with setup instructions
-- Mito seed with 5 worlds, 2 characters, 5 scenes, 15 shots
+- Batch Status Update (multi-shot advancement)
+- Secrets Management API (store/retrieve API keys from DB)
+- Health Check + MongoDB indexes on startup
+- Shot filtering by scene_id and status
+- Mito seed with 5 worlds, 2 characters, 5 scenes, 15 shots with transition types
 
-## What's STUBBED (exists but incomplete)
-- New Project creation (button exists, page route needs creation)
-- Shot detail editing (no click-to-edit panel yet)
-- Scene/Shot CRUD in UI (backend ready, frontend dialogs pending)
-- Object add/edit UI (backend ready, frontend dialog pending)
-- Image display (URL fields exist, no thumbnail rendering on cards)
+### Frontend
+- Dashboard with stats + project cards
+- New Project creation page (brand, style, defaults, target duration)
+- Project View with 5 tabs + Export button
+- World Bible: Worlds/Characters/Props with image thumbnails, add/delete with confirm dialogs
+- Storyboard: Scene grouping, Add Scene dialog, Add Shot dialog, shot cards with image thumbnails
+- Shot Detail Dialog: Full editing (description, duration, framing, camera, status, prompt stack, audio stack, frame continuity, transitions, reference images, notes) + Compile button + Delete with confirmation
+- Compile-from-Shot: Click Compile on any shot → switches to AI Compiler tab with pre-filled context (scene, world, characters, adjacent frame URLs)
+- Pipeline Kanban: 7-stage advancement with toast notifications
+- AI Compiler: World/character/zone/framing/camera selectors, reference images, frame continuity display, compilation history viewer
+- Settings: API Keys & Secrets (EMERGENT_LLM_KEY, NOTION_API_KEY), Project Identity, Tags, Compliance Rails, Visual Style, Model Preferences, Default Settings
+- Toast notifications on all operations (sonner)
+- Delete confirmation dialogs on all destructive operations
+- Dark theme throughout
+
+### Deployment
+- Dockerfile.backend, Dockerfile.frontend, docker-compose.yml, nginx.conf
+- .env.example files for both services
+- README.md with full setup instructions
 
 ## What's COMING SOON
-- Notion bi-directional sync
-- Drag-and-drop reordering (storyboard + kanban)
-- Batch compilation (multi-shot)
-- Image upload (currently URL-based references)
-- Confirmation dialogs before delete
-- Toast notifications on operations
-- Search/filter on all lists
-- Compile from shot card
-- Share Production Bible (PDF/web export)
+- Notion bi-directional sync (MCP tools available, integration code pending)
+- Drag-and-drop shot/scene reordering
+- Batch compilation (multi-shot in one call)
+- Image upload (currently URL-based)
 - Inline editing on world/character cards
+- Share Production Bible (PDF/web export)
+- AI Image Description from UI (backend ready, frontend button pending)
 - Keyboard shortcuts
 - Error boundaries
-
-## Backlog (Prioritized)
-### P0 — Next Session
-- [ ] New Project creation page
-- [ ] Shot detail slide-out panel (edit all fields)
-- [ ] Add Scene / Add Shot dialogs
-- [ ] Toast notifications (sonner already in deps)
-- [ ] Delete confirmation dialogs
-- [ ] Image thumbnail display on cards
-
-### P1
-- [ ] Notion sync (read/write)
-- [ ] Compile from shot card
-- [ ] Inline editing
-- [ ] Search/filter
-- [ ] Batch compile UI
-
-### P2
-- [ ] Share Production Bible export
-- [ ] Drag-and-drop
-- [ ] Duration warnings
-- [ ] Mobile responsive
-- [ ] Keyboard shortcuts
+- Mobile responsive layouts
