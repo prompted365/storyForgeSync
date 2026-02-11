@@ -1,34 +1,82 @@
-.App-logo {
-    height: 40vmin;
-    pointer-events: none;
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;800&family=JetBrains+Mono:wght@400;500&family=Manrope:wght@300;400;600;700&display=swap');
+
+html, body, #root, .App {
+  min-height: 100vh;
+  background: #050505;
+  color: #fafafa;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-    .App-logo {
-        animation: App-logo-spin infinite 20s linear;
-    }
+html { color-scheme: dark; }
+body { font-family: 'Manrope', sans-serif; }
+
+.font-heading { font-family: 'Barlow Condensed', sans-serif; }
+.font-body { font-family: 'Manrope', sans-serif; }
+.font-mono { font-family: 'JetBrains Mono', monospace; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #0a0a0a; }
+::-webkit-scrollbar-thumb { background: #27272a; border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
+
+/* Stage colors */
+.stage-concept { --stage: #6366f1; }
+.stage-world_built { --stage: #8b5cf6; }
+.stage-blocked { --stage: #f59e0b; }
+.stage-generated { --stage: #06b6d4; }
+.stage-audio_layered { --stage: #ec4899; }
+.stage-mixed { --stage: #f97316; }
+.stage-final { --stage: #10b981; }
+
+/* Zone colors */
+.zone-intimate { color: #f59e0b; }
+.zone-contemplative { color: #6366f1; }
+.zone-tense { color: #ef4444; }
+.zone-revelatory { color: #8b5cf6; }
+.zone-chaotic { color: #f97316; }
+.zone-transcendent { color: #fbbf24; }
+.zone-desolate { color: #6b7280; }
+.zone-triumphant { color: #10b981; }
+.zone-liminal { color: #06b6d4; }
+
+/* Kanban column */
+.kanban-col {
+  min-height: 300px;
+  background: rgba(10,10,10,0.6);
+  border: 1px solid rgba(255,255,255,0.05);
 }
 
-.App-header {
-    background-color: #0f0f10;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    font-size: calc(10px + 2vmin);
-    color: white;
+/* Tracing beam border effect */
+.trace-border {
+  position: relative;
+  overflow: hidden;
+}
+.trace-border::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 1px solid rgba(99,102,241,0.15);
+  pointer-events: none;
+  border-radius: inherit;
+  transition: border-color 0.3s;
+}
+.trace-border:hover::before {
+  border-color: rgba(99,102,241,0.4);
 }
 
-.App-link {
-    color: #61dafb;
+/* Glass card */
+.glass-card {
+  background: rgba(10,10,10,0.8);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255,255,255,0.06);
+}
+.glass-card:hover {
+  border-color: rgba(99,102,241,0.3);
 }
 
-@keyframes App-logo-spin {
-    from {
-        transform: rotate(0deg);
-    }
-    to {
-        transform: rotate(360deg);
-    }
+/* Pulse dot */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
+.pulse-dot { animation: pulse-dot 2s ease-in-out infinite; }
