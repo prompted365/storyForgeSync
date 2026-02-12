@@ -35,11 +35,11 @@ export default function Dashboard() {
 
   useEffect(() => { load(); }, [load]);
 
-  const handleSeedMito = async () => {
+  const handleSeedExample = async () => {
     try {
-      const result = await seed.mito();
+      const result = await seed.example();
       if (result.project_id) {
-        toast.success('Mito project seeded successfully');
+        toast.success('Example project seeded successfully');
         await load();
       }
     } catch (e) { toast.error('Failed to seed project'); }
@@ -91,8 +91,8 @@ export default function Dashboard() {
       <div className="flex items-center gap-4 mb-8">
         <h2 className="font-heading font-bold text-2xl uppercase tracking-tight text-white flex-1">Projects</h2>
         {projectList.length === 0 && (
-          <Button onClick={handleSeedMito} className="rounded-sm font-heading uppercase tracking-wider text-sm bg-indigo-600 hover:bg-indigo-500" data-testid="seed-mito-btn">
-            <Zap className="w-4 h-4 mr-2" /> Seed Mito Project
+          <Button onClick={handleSeedExample} className="rounded-sm font-heading uppercase tracking-wider text-sm bg-indigo-600 hover:bg-indigo-500" data-testid="seed-example-btn">
+            <Zap className="w-4 h-4 mr-2" /> Seed Example Project
           </Button>
         )}
         <Button onClick={() => navigate('/project/new')} variant="outline" className="rounded-sm font-heading uppercase tracking-wider text-sm border-zinc-700 hover:border-indigo-500" data-testid="new-project-btn">
@@ -105,9 +105,9 @@ export default function Dashboard() {
         <div className="glass-card rounded-sm p-16 text-center">
           <Layers className="w-12 h-12 text-zinc-700 mx-auto mb-4" />
           <p className="font-heading text-xl text-zinc-400 uppercase mb-2">No Projects Yet</p>
-          <p className="text-sm text-zinc-600 mb-6">Seed the Mito animated short to get started</p>
-          <Button onClick={handleSeedMito} className="rounded-sm font-heading uppercase tracking-wider bg-indigo-600 hover:bg-indigo-500" data-testid="seed-mito-empty-btn">
-            <Zap className="w-4 h-4 mr-2" /> Seed Mito Project
+          <p className="text-sm text-zinc-600 mb-6">Seed an example project to get started</p>
+          <Button onClick={handleSeedExample} className="rounded-sm font-heading uppercase tracking-wider bg-indigo-600 hover:bg-indigo-500" data-testid="seed-example-empty-btn">
+            <Zap className="w-4 h-4 mr-2" /> Seed Example Project
           </Button>
         </div>
       ) : (

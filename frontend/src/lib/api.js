@@ -89,7 +89,7 @@ export const enums = {
 };
 
 export const seed = {
-  mito: () => api.post('/seed/mito').then(r => r.data),
+  example: () => api.post('/seed/example').then(r => r.data),
 };
 
 export const health = {
