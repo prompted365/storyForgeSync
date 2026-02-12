@@ -94,7 +94,7 @@ FastAPI auto-generates docs at `/docs` (Swagger) and `/redoc`.
 | GET | /api/projects/:id/compilations | Compilation history |
 | GET | /api/projects/:id/export | Full project JSON export |
 | GET/PUT | /api/secrets | Manage API keys |
-| POST | /api/seed/mito | Seed Mito animated short |
+| POST | /api/seed/example | Seed example project |
 
 ## Environment Variables
 

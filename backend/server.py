@@ -833,60 +833,56 @@ async def dashboard_stats():
 async def get_enums():
     return {"production_stages": PRODUCTION_STAGES, "emotional_zones": EMOTIONAL_ZONES, "framings": FRAMINGS, "camera_movements": CAMERA_MOVEMENTS, "transition_types": TRANSITION_TYPES}
 
-# ==================== SEED MITO ====================
+# ==================== SEED EXAMPLE ====================
 
-@api_router.post("/seed/mito")
-async def seed_mito_project():
-    existing = await db.projects.find_one({"name": "Mito — The Animated Short"}, {"_id": 0})
+@api_router.post("/seed/example")
+async def seed_example_project():
+    existing = await db.projects.find_one({"name": "Example Short Film"}, {"_id": 0})
     if existing:
         return {"status": "already_seeded", "project_id": existing["id"]}
 
     pid = new_id()
     project = {
-        "id": pid, "name": "Mito — The Animated Short",
-        "brand_primary": "Everything's Energy", "brand_secondary": "EESYS / EESystem",
-        "description": "A 5-minute animated short exploring consciousness, scalar energy, and cellular healing through the journey of Mito — a mitochondrial entity awakening to its potential.",
-        "compliance_notes": ["Content must respect the EESystem brand", "No medical claims — position as educational/exploratory", "Ethical sound design by construction"],
-        "forbidden_elements": ["Cheap emotional manipulation", "Horror tropes without purpose", "Generic stock imagery aesthetics"],
-        "required_elements": ["Consistent character identity across all shots", "Declarative media grammar (Intent/Constraint/Emission)", "Zone-aware audio design"],
-        "visual_style": "Cinematic, ethereal, bioluminescent. Think cellular landscapes meeting cosmic vistas. Color palette: deep indigos, electric teals, warm ambers for healing moments.",
-        "default_time_of_day": "twilight", "default_weather": "clear", "default_lighting": "bioluminescent",
-        "default_aspect_ratio": "16:9", "target_duration_sec": 300.0,
-        "model_preferences": {"image": "Nano Banana Pro", "video": "Veo 3.1", "world": "Marble (WorldLabs)"},
-        "tags": ["animated_short", "eesystem", "consciousness", "healing"],
+        "id": pid, "name": "Example Short Film",
+        "brand_primary": "", "brand_secondary": "",
+        "description": "A sample short film project demonstrating the StoryForgeSync workflow with multiple worlds, characters, scenes, and shots.",
+        "compliance_notes": [],
+        "forbidden_elements": [],
+        "required_elements": ["Consistent visual style", "Clear narrative progression"],
+        "visual_style": "Cinematic and visually compelling. Modern aesthetic with attention to lighting and composition.",
+        "default_time_of_day": "day", "default_weather": "clear", "default_lighting": "natural",
+        "default_aspect_ratio": "16:9", "target_duration_sec": 180.0,
+        "model_preferences": {"image": "", "video": "", "world": ""},
+        "tags": ["example", "demo", "short_film"],
         "created_at": utcnow(), "updated_at": utcnow()
     }
     await db.projects.insert_one(project)
 
     worlds_data = [
-        {"name": "The Cellular Interior", "description": "Inside a living cell — mitochondria, organelles, flowing cytoplasm. Bioluminescent structures pulse with energy.", "emotional_zone": "intimate", "atmosphere": "Warm, alive, pulsing with potential", "spatial_character": "intimate/enclosed", "lighting_notes": "Bioluminescent — soft blue-green glow from organelles, warm amber from energy production"},
-        {"name": "The Neural Network", "description": "Vast interconnected pathways of neurons firing. Synaptic gaps bridged by light.", "emotional_zone": "revelatory", "atmosphere": "Electric, expansive, awe-inspiring", "spatial_character": "vast/infinite", "lighting_notes": "Electric blue synaptic flashes against deep purple void"},
-        {"name": "The Wasteland", "description": "A depleted, toxic cellular environment. Damaged structures, dim light, entropy visible.", "emotional_zone": "desolate", "atmosphere": "Decayed, threatening, suffocating", "spatial_character": "vast/barren", "lighting_notes": "Dim, desaturated, occasional sickly yellow-green"},
-        {"name": "The Scalar Field", "description": "Abstract energy patterns — standing waves, interference patterns, golden ratio spirals.", "emotional_zone": "transcendent", "atmosphere": "Pure energy, mathematical beauty, transcendence", "spatial_character": "infinite/unbounded", "lighting_notes": "Pure white-gold energy with prismatic refractions"},
-        {"name": "The Awakening Chamber", "description": "Where Mito first encounters the scalar field. A threshold space between damage and regeneration.", "emotional_zone": "liminal", "atmosphere": "Transitional, pregnant with possibility", "spatial_character": "threshold/between", "lighting_notes": "Gradient from cold blue to warm gold"},
+        {"name": "The Urban Street", "description": "A bustling city street with modern architecture, pedestrians, and vibrant storefronts.", "emotional_zone": "energetic", "atmosphere": "Busy, dynamic, full of life", "spatial_character": "urban/street-level", "lighting_notes": "Natural daylight with shadows from buildings"},
+        {"name": "The Quiet Park", "description": "A peaceful park with trees, benches, and a small pond reflecting the sky.", "emotional_zone": "calm", "atmosphere": "Serene, contemplative, relaxing", "spatial_character": "open/natural", "lighting_notes": "Soft natural light filtered through leaves"},
+        {"name": "The Coffee Shop", "description": "A cozy interior space with warm lighting, wooden tables, and the aroma of fresh coffee.", "emotional_zone": "intimate", "atmosphere": "Warm, inviting, comfortable", "spatial_character": "intimate/interior", "lighting_notes": "Warm ambient lighting with pendant lamps"},
     ]
     for w in worlds_data:
         w.update({"id": new_id(), "project_id": pid, "created_at": utcnow(), "marble_url": "", "reference_images": [], "time_of_day": "", "weather": "", "tags": []})
     await db.worlds.insert_many(worlds_data)
 
     chars_data = [
-        {"name": "Mito", "role": "Protagonist", "description": "A mitochondrial entity — small, luminous, curious. Begins depleted and dim, gradually brightens.", "personality": "Curious, resilient, innocent but growing in wisdom", "voice_profile": "Childlike wonder evolving to quiet authority", "visual_notes": "Bioluminescent orb with internal structure. Color shifts from dim amber to radiant gold.", "motivation_notes": "Survival → Understanding → Purpose → Service", "arc_summary": "From depleted organelle to awakened energy being"},
-        {"name": "The Signal", "role": "Catalyst", "description": "The scalar energy field personified. Not a face — a wave, a resonance, a calling.", "personality": "Patient, vast, impersonal but benevolent", "voice_profile": "No voice — harmonic frequencies and spatial audio", "visual_notes": "Standing wave patterns, golden ratio spirals, interference patterns in light", "motivation_notes": "Exists to activate, not to persuade", "arc_summary": "Constant presence that Mito learns to perceive"},
+        {"name": "Alex", "role": "Protagonist", "description": "A young professional navigating life in the city, searching for meaning and connection.", "personality": "Thoughtful, introspective, hopeful", "voice_profile": "Natural, conversational, genuine", "visual_notes": "Casual modern attire, relatable appearance", "motivation_notes": "Seeking purpose and authentic human connection", "arc_summary": "From isolated to connected"},
+        {"name": "Sam", "role": "Supporting", "description": "A friendly acquaintance who becomes a catalyst for change.", "personality": "Warm, open, encouraging", "voice_profile": "Friendly and approachable", "visual_notes": "Comfortable, welcoming appearance", "motivation_notes": "Naturally connects with others", "arc_summary": "The bridge to new possibilities"},
     ]
     for c in chars_data:
         c.update({"id": new_id(), "project_id": pid, "created_at": utcnow(), "identity_images": [], "relationships": [], "tags": []})
     await db.characters.insert_many(chars_data)
 
     scenes_data = [
-        {"scene_number": 1, "title": "Diminished Light", "synopsis": "Mito exists in a depleted cell. Low energy, damaged environment.", "emotional_zone": "desolate", "narrative_purpose": "Establish stakes", "dramatic_tension": 3},
-        {"scene_number": 2, "title": "The First Pulse", "synopsis": "A faint signal reaches Mito. The scalar field makes first contact.", "emotional_zone": "liminal", "narrative_purpose": "Inciting incident", "dramatic_tension": 5},
-        {"scene_number": 3, "title": "The Awakening", "synopsis": "Mito enters the scalar field. Perception expands. Regeneration begins.", "emotional_zone": "revelatory", "narrative_purpose": "Transformation", "dramatic_tension": 8},
-        {"scene_number": 4, "title": "The Network", "synopsis": "Mito discovers connection to millions. Collective healing begins.", "emotional_zone": "transcendent", "narrative_purpose": "Scale shift", "dramatic_tension": 9},
-        {"scene_number": 5, "title": "Radiance", "synopsis": "Cell restored. Mito at full energy. A new signal goes out.", "emotional_zone": "triumphant", "narrative_purpose": "Resolution", "dramatic_tension": 7},
+        {"scene_number": 1, "title": "Morning Rush", "synopsis": "Alex navigates the busy city street, disconnected from the world around.", "emotional_zone": "energetic", "narrative_purpose": "Establish character and setting", "dramatic_tension": 4},
+        {"scene_number": 2, "title": "The Encounter", "synopsis": "Alex meets Sam at the coffee shop. A moment of genuine connection.", "emotional_zone": "intimate", "narrative_purpose": "Catalyst for change", "dramatic_tension": 6},
+        {"scene_number": 3, "title": "Reflection", "synopsis": "Alex sits alone in the park, contemplating the encounter and life's possibilities.", "emotional_zone": "calm", "narrative_purpose": "Internal transformation", "dramatic_tension": 5},
     ]
     wlist = await db.worlds.find({"project_id": pid}, {"_id": 0, "id": 1, "name": 1}).to_list(10)
     wmap = {w["name"]: w["id"] for w in wlist}
-    swmap = {1: "The Wasteland", 2: "The Awakening Chamber", 3: "The Scalar Field", 4: "The Neural Network", 5: "The Cellular Interior"}
+    swmap = {1: "The Urban Street", 2: "The Coffee Shop", 3: "The Quiet Park"}
     cids = [c["id"] for c in await db.characters.find({"project_id": pid}, {"_id": 0, "id": 1}).to_list(10)]
 
     for s in scenes_data:
@@ -895,18 +891,16 @@ async def seed_mito_project():
 
     slist = await db.scenes.find({"project_id": pid}, {"_id": 0}).sort("scene_number", 1).to_list(20)
     shots_per = [
-        [("extreme_wide","dolly_in",8,"Vast depleted landscape. Mito barely visible."),("close","static",5,"Mito's dim glow flickering."),("medium","pan_left",6,"Damaged structures around Mito.")],
-        [("medium","static",5,"Mito senses something. Slight brightening."),("wide","crane_up",7,"The scalar pulse arrives — visible wave."),("close","dolly_in",6,"Mito turns toward the signal.")],
-        [("extreme_wide","orbit",8,"Mito enters the scalar field. Explosion of light."),("close","static",5,"Mito's internal structure transforming."),("medium_wide","tracking",7,"Energy flowing through the cell.")],
-        [("extreme_wide","crane_up",8,"Neural network revealed. Millions of connections."),("medium","tracking",6,"Following the signal along pathways."),("wide","orbit",8,"Collective activation — cells lighting up.")],
-        [("medium","dolly_out",6,"Mito at full radiance."),("wide","crane_up",7,"The restored cell, vibrant and alive."),("extreme_wide","static",8,"A new signal goes out. The cycle continues.")],
+        [("wide","tracking",6,"Alex walks through crowded street, isolated among many."),("medium","dolly_in",5,"Close-up on Alex's detached expression."),("wide","pan_right",5,"The busy street continues around them.")],
+        [("medium","static",5,"Alex and Sam sitting at coffee shop table."),("close","dolly_in",6,"Sam's warm smile and genuine interest."),("medium_wide","static",5,"A moment of authentic connection.")],
+        [("wide","crane_up",7,"Alex sits on park bench, trees surrounding."),("close","static",5,"Alex's contemplative face, hint of a smile."),("extreme_wide","static",6,"The peaceful park, a new perspective.")],
     ]
     snum = 1
     inserts = []
     for idx, sc in enumerate(slist):
         for fr, mv, dur, desc in shots_per[idx]:
             t_in = "fade_from_black" if snum == 1 else "cut"
-            t_out = "fade_to_black" if snum == 15 else ("dissolve" if idx < len(slist)-1 and shots_per[idx].index((fr,mv,dur,desc)) == len(shots_per[idx])-1 else "cut")
+            t_out = "fade_to_black" if snum == 9 else ("dissolve" if idx < len(slist)-1 and shots_per[idx].index((fr,mv,dur,desc)) == len(shots_per[idx])-1 else "cut")
             inserts.append({
                 "id": new_id(), "project_id": pid, "scene_id": sc["id"], "shot_number": snum,
                 "duration_target_sec": dur, "framing": fr, "camera_movement": mv, "camera_notes": "",

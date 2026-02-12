@@ -87,17 +87,17 @@ class StoryForgeAPITester:
             print(f"   📋 Enums loaded: {len(response.get('production_stages', []))} stages")
         return success
 
-    def test_seed_mito_project(self):
-        """Test seeding Mito project"""
+    def test_seed_example_project(self):
+        """Test seeding example project"""
         success, response = self.run_test(
-            "Seed Mito Project",
+            "Seed Example Project",
             "POST",
-            "seed/mito",
+            "seed/example",
             200
         )
         if success and 'project_id' in response:
             self.project_id = response['project_id']
-            print(f"   🌱 Mito project seeded: {self.project_id}")
+            print(f"   🌱 Example project seeded: {self.project_id}")
             print(f"   📈 Created: {response.get('worlds', 0)} worlds, {response.get('characters', 0)} characters, {response.get('shots', 0)} shots")
         return success
 
@@ -404,7 +404,7 @@ def main():
     tests = [
         ("Dashboard Stats", tester.test_dashboard_stats),
         ("Enums", tester.test_get_enums),
-        ("Seed Mito Project", tester.test_seed_mito_project),
+        ("Seed Example Project", tester.test_seed_example_project),
         ("List Projects", tester.test_list_projects),
         ("Get Project Details", tester.test_get_project),
         ("Worlds API", tester.test_worlds_api), 
